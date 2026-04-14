@@ -1,4 +1,20 @@
-<!DOCTYPE html>
+<!DOC
+    {/* Stats tiles — reactive to current filter */}
+    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+      {[
+        ['Showing',filtered.length,'#f3f4f6','#374151','#9ca3af'],
+        ['Needs GFR',filtered.filter(s=>!s.gfr||s.gfr==='').length,'#fee2e2','#991b1b','#ef4444'],
+        ['GFR Assigned',filtered.filter(s=>s.gfr&&!s.gfr.includes('pending')).length,'#d1fae5','#065f46','#059669'],
+        ['Pending Response',filtered.filter(s=>s.gfr&&s.gfr.includes('pending')).length,'#dbeafe','#1e3a8a','#2563eb'],
+        ['Defense Scheduled',filtered.filter(s=>!!s.defense_date).length,'#fef3c7','#92400e','#d97706'],
+      ].map(([label,val,bg,fg,accent])=>(
+        <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
+          <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+          <div style={{fontSize:10,opacity:0.75,marginTop:1}}>{label}</div>
+        </div>
+      ))}
+    </div>
+TYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -524,14 +540,45 @@ function App(){
     const gfr=gfrData.find(r=>String(r.id)===String(req.gfr_id));
     const today=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const note='Accepted GFR request for '+req.student_name+' on '+today;
-    const gradDt=parseGradDate(req.grad_expected||'',req.anticipated_grad||'');
+
+    // Find the student record to pull authoritative data from students tab
+    const student=students.find(s=>
+      s.full_name===req.student_name||
+      (s.first_name+' '+s.last_name)===req.student_name||
+      s.full_name===(req.student_name)
+    );
+    const gradExpected=student?student.anticipated_grad||req.grad_expected||'':req.grad_expected||'';
+    const studentCollege=student?student.college_code||req.student_college||'':req.student_college||'';
+    const studentProgram=student?student.program_name||student.major||req.student_program||'':req.student_program||'';
+    const gradDt=parseGradDate(student?student.defense_date||'':req.grad_expected||'',gradExpected);
+
+    // 1. Update GFR professor → Active with student info from students tab
     if(gfr){
       const existing=(gfr.notes||'').trim();
-      await updateGFR(gfr.id,{name:gfr.name,college:gfr.college,title:gfr.title,department:gfr.department,grad_dt:gradDt||gfr.grad_dt||null,status:'Active',current_student:req.student_name||'',current_student_college:req.student_college||'',grad_expected:req.grad_expected||'',program:req.student_program||'',notes:existing?existing+'\n'+note:note});
+      await updateGFR(gfr.id,{
+        name:gfr.name,college:gfr.college,title:gfr.title,department:gfr.department,
+        grad_dt:gradDt||gfr.grad_dt||null,
+        status:'Active',
+        current_student:req.student_name||'',
+        current_student_college:studentCollege,
+        grad_expected:gradExpected,
+        program:studentProgram,
+        notes:existing?existing+'\n'+note:note
+      });
     }
+
+    // 2. Update student record → gfr = professor name (remove "(pending)")
+    if(student){
+      await updateStudent(student.id,{gfr:req.gfr_name});
+    } else {
+      // fallback: find by matching name substring
+      const stuByName=students.find(s=>s.full_name&&s.full_name.toLowerCase().includes(req.student_name.toLowerCase().split(',')[0]));
+      if(stuByName) await updateStudent(stuByName.id,{gfr:req.gfr_name});
+    }
+
     await patchRequest(req.id,{status:'accepted'});
-    notify('✅ '+req.gfr_name+' accepted — status set to Active');
-  },[gfrData,updateGFR,patchRequest]);
+    notify('✅ '+req.gfr_name+' accepted — GFR faculty and student record updated');
+  },[gfrData,students,updateGFR,updateStudent,patchRequest]);
 
   const handleDecline=useCallback(async(req,outcome)=>{
     const gfr=gfrData.find(r=>String(r.id)===String(req.gfr_id));
@@ -539,6 +586,11 @@ function App(){
     const note=outcome==='declined'?'Declined GFR request for '+req.student_name+' on '+today:'No response to GFR request for '+req.student_name+' on '+today+' (48hr passed)';
     await patchRequest(req.id,{status:outcome==='declined'?'declined':'no_response'});
     if(gfr)await appendGfrNote(gfr,note);
+    // Clear student's pending GFR text so they show as needing GFR again
+    const student=students.find(s=>s.full_name===req.student_name);
+    if(student&&(student.gfr||'').includes('(pending)')){
+      await updateStudent(student.id,{gfr:''});
+    }
     notify((outcome==='declined'?'❌ Declined':'⏰ No reply')+' — finding next candidate…','warning');
     // Build next candidate pool
     const tried=new Set(requests.filter(r=>r.student_name===req.student_name&&(r.status==='pending'||r.status==='declined'||r.status==='no_response')).map(r=>String(r.gfr_id)));
@@ -670,40 +722,24 @@ function App(){
       <div style={{maxWidth:1500,margin:'0 auto',padding:'20px 24px'}}>
         {/* Stats — view-specific */}
         {view==='faculty'&&(
-          <div style={{display:'flex',gap:8,marginBottom:backupDue?8:20,flexWrap:'wrap',alignItems:'center'}}>
-            {[['GFR Total',stats.total,'#1a1a2e','#fff','#fff'],['Free',stats.free,'#d1fae5','#065f46','#059669'],['Active',stats.active,'#fef3c7','#92400e','#d97706'],['Pending Req.',stats.pending,stats.pending>0?'#dbeafe':'#f9fafb',stats.pending>0?'#1e3a8a':'#6b7280','#2563eb']].map(([label,val,bg,fg,accent])=>(
-              <div key={label} style={{background:bg,color:fg,borderRadius:10,padding:'10px 16px',flex:1,minWidth:80,borderLeft:'3px solid '+accent}}>
-                <div style={{fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-                <div style={{fontSize:11,opacity:0.75,marginTop:1}}>{label}</div>
-              </div>
-            ))}
-            <div style={{display:'flex',gap:8,flexShrink:0,flexWrap:'wrap'}}>
-              {gfrEmpty&&<button className="btn btn-p" onClick={()=>seedTable('gfr')} style={{whiteSpace:'nowrap',fontSize:12}}>⬆ Load GFR Data</button>}
-              <button className="btn btn-g" onClick={()=>setShowAdd(true)}>+ Add GFR</button>
-              <button className="btn btn-o" onClick={()=>typeof exportCSV==="function"&&exportCSV(gfrWithPending,requests,students)}>⬇ Export</button>
-              <button className="btn" onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} disabled={backingUp} title={lastBackup?'Last: '+new Date(lastBackup).toLocaleDateString():'Never backed up'} style={{background:backupDue?'#d97706':'#374151',color:'#fff',opacity:backingUp?0.7:1,animation:backupDue?'pulse 2s infinite':'none',whiteSpace:'nowrap'}}>
-                {backingUp?'⏳…':backupDue?'🔔 Backup Due':'☁ Backup'}
-              </button>
-            </div>
+          <div style={{display:'flex',gap:8,marginBottom:backupDue?8:12,flexWrap:'wrap',alignItems:'center',justifyContent:'flex-end'}}>
+            {gfrEmpty&&<button className="btn btn-p" onClick={()=>seedTable('gfr')} style={{whiteSpace:'nowrap',fontSize:12}}>⬆ Load GFR Data</button>}
+            <button className="btn btn-g" onClick={()=>setShowAdd(true)}>+ Add GFR</button>
+            <button className="btn btn-o" onClick={()=>typeof exportCSV==="function"&&exportCSV(gfrWithPending,requests,students)}>⬇ Export</button>
+            <button className="btn" onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} disabled={backingUp} title={lastBackup?'Last: '+new Date(lastBackup).toLocaleDateString():'Never backed up'} style={{background:backupDue?'#d97706':'#374151',color:'#fff',opacity:backingUp?0.7:1,animation:backupDue?'pulse 2s infinite':'none',whiteSpace:'nowrap'}}>
+              {backingUp?'⏳…':backupDue?'🔔 Backup Due':'☁ Backup'}
+            </button>
           </div>
         )}
         {view==='faculty'&&<FacultyView gfrData={gfrWithPending} updateGFR={updateGFR} deleteGFR={deleteGFR} departments={departments} programs={programs} notify={notify}/>}
 
         {view==='committee'&&(
-          <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
-            {[['Total Students',stats.students,'#1a1a2e','#fff','#fff'],['Needs GFR',stats.needsGFR,stats.needsGFR>0?'#fee2e2':'#f9fafb',stats.needsGFR>0?'#991b1b':'#6b7280','#ef4444'],['Has GFR',stats.students-stats.needsGFR,'#d1fae5','#065f46','#059669'],['Pending Requests',stats.pending,stats.pending>0?'#dbeafe':'#f9fafb',stats.pending>0?'#1e3a8a':'#6b7280','#2563eb']].map(([label,val,bg,fg,accent])=>(
-              <div key={label} style={{background:bg,color:fg,borderRadius:10,padding:'10px 16px',flex:1,minWidth:80,borderLeft:'3px solid '+accent}}>
-                <div style={{fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-                <div style={{fontSize:11,opacity:0.75,marginTop:1}}>{label}</div>
-              </div>
-            ))}
-            <div style={{display:'flex',gap:8,flexShrink:0}}>
-              {studentsEmpty&&<button className="btn btn-p" onClick={()=>seedTable('students')} style={{whiteSpace:'nowrap',fontSize:12}}>⬆ Load Students</button>}
-              <button className="btn btn-o" style={{whiteSpace:'nowrap'}} onClick={()=>typeof exportStudentsCSV==="function"&&exportStudentsCSV(students)} title="Downloads full student CSV with all fields">⬇ Export Students</button>
-              <button className="btn btn-o" style={{whiteSpace:'nowrap',color:backupDue?'#d97706':'#374151',borderColor:backupDue?'#d97706':'#d1d5db',animation:backupDue?'pulse 2s infinite':'none'}} onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} title={lastBackup?'Last backup: '+new Date(lastBackup).toLocaleDateString():'Never backed up'}>
-                {backupDue?'🔔 Backup Due':'☁ Backup All Data'}
-              </button>
-            </div>
+          <div style={{display:'flex',gap:8,marginBottom:backupDue?8:12,flexWrap:'wrap',alignItems:'center',justifyContent:'flex-end'}}>
+            {studentsEmpty&&<button className="btn btn-p" onClick={()=>seedTable('students')} style={{whiteSpace:'nowrap',fontSize:12}}>⬆ Load Students</button>}
+            <button className="btn btn-o" onClick={()=>typeof exportStudentsCSV==="function"&&exportStudentsCSV(students)}>⬇ Export Students</button>
+            <button className="btn btn-o" style={{color:backupDue?'#d97706':'#374151',borderColor:backupDue?'#d97706':'#d1d5db',animation:backupDue?'pulse 2s infinite':'none'}} onClick={()=>backupDue?setShowBackupModal(true):handleBackup()}>
+              {backupDue?'🔔 Backup Due':'☁ Backup All Data'}
+            </button>
           </div>
         )}
 
@@ -795,6 +831,23 @@ function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
       </select>
       <span style={{color:'#9ca3af',fontSize:12,whiteSpace:'nowrap'}}>{filtered.length} of {gfrData.length}</span>
     </div>
+
+    {/* Reactive stats — updates with filters */}
+    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+      {[
+        ['Showing',filtered.length,'#f3f4f6','#374151','#9ca3af'],
+        ['Free',filtered.filter(r=>r.liveStatus==='Free').length,'#d1fae5','#065f46','#059669'],
+        ['Active',filtered.filter(r=>r.liveStatus==='Active').length,'#fef3c7','#92400e','#d97706'],
+        ['Declined',filtered.filter(r=>r.liveStatus==='Declined').length,'#f3f4f6','#374151','#9ca3af'],
+        ['Pending',filtered.filter(r=>r.hasPendingRequest).length,'#dbeafe','#1e3a8a','#2563eb'],
+      ].map(([label,val,bg,fg,accent])=>(
+        <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
+          <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+          <div style={{fontSize:10,opacity:0.75,marginTop:1}}>{label}</div>
+        </div>
+      ))}
+    </div>
+
     <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#f8f7f4',borderBottom:'1.5px solid #e5e7eb'}}>
@@ -1335,6 +1388,22 @@ function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent
       <button className="btn btn-g btn-sm" onClick={()=>setShowAddModal(true)}>+ Add Student</button>
     </div>
 
+    {/* Reactive stats — updates with filters */}
+    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+      {[
+        ['Showing',filtered.length,'#f3f4f6','#374151','#9ca3af'],
+        ['Needs GFR',filtered.filter(s=>!s.gfr||s.gfr==='').length,'#fee2e2','#991b1b','#ef4444'],
+        ['GFR Assigned',filtered.filter(s=>s.gfr&&!s.gfr.includes('pending')).length,'#d1fae5','#065f46','#059669'],
+        ['Pending',filtered.filter(s=>s.gfr&&s.gfr.includes('pending')).length,'#dbeafe','#1e3a8a','#2563eb'],
+        ['Defense Set',filtered.filter(s=>!!s.defense_date).length,'#fef3c7','#92400e','#d97706'],
+      ].map(([label,val,bg,fg,accent])=>(
+        <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
+          <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+          <div style={{fontSize:10,opacity:0.75,marginTop:1}}>{label}</div>
+        </div>
+      ))}
+    </div>
+
     <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#f8f7f4',borderBottom:'1.5px solid #e5e7eb'}}>
@@ -1395,7 +1464,22 @@ function StudentDetail({student:s,updateStudent,deleteStudent,programs,notify,on
     // Auto-fill when program changes
     if(k==='major'){
       const prog=programs.find(p=>p.code===v);
-      if(prog){updated.program_name=prog.name;updated.college_code=prog.college_code;updated.college_name=prog.college_name;updated.department=prog.department;updated.coordinator=prog.coordinator;updated.dept_chair='';}
+      if(prog){
+        updated.program_name=prog.name;
+        updated.college_code=prog.college_code;
+        updated.college_name=prog.college_name;
+        updated.department=prog.department;
+        updated.coordinator=prog.coordinator;
+        // Recalculate advisor based on new college + existing last_name
+        const advisor=lookupAdvisor(prog.college_code, updated.last_name||form.last_name||'');
+        if(advisor) updated.academic_advisor=advisor;
+      }
+    }
+    // Recalculate advisor when last_name changes
+    if(k==='last_name'){
+      const collegeCode=updated.college_code||form.college_code||'';
+      const advisor=lookupAdvisor(collegeCode, v||'');
+      if(advisor) updated.academic_advisor=advisor;
     }
     setForm(updated);
   };
@@ -1742,7 +1826,9 @@ function SettingsView({programs,departments,advisors,updateProgram,updateDepartm
           </tr>}
         </tbody>
       </table>
-    </div>}
+    </div>      ))}
+    </div>
+}
   </div>);
 }
 
