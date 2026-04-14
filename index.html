@@ -294,19 +294,31 @@ function NextCandidatePopup({candidate,studentInfo,totalCandidates,currentIdx,on
     if(!candidate||!studentInfo)return;
     const ln=candidate.name.split(' ').pop();
     const f=studentInfo;
-    setEmailBody(['Dr. '+ln+',','',
-      f.student_name+', a doctoral student in the '+(f.student_program||f.student_college)+' program, needs a Graduate Faculty Representative for their dissertation advisory committee and your participation is requested.','',
-      'You are receiving this request because you are now eligible to serve as a Graduate Faculty Representative with the changes made to the newly approved Graduate Committee Membership policy. (__12.99.99.c0.03-graduate-committee-membership__)','',
-      'Below is some text regarding this responsibility that can provide some additional information.','',
-      'The committee chair is '+(f.chair||'[Chair]')+(f.cochair?', Co-Chair is '+f.cochair:'')+', and the dissertation title is "'+(f.dissertation||'[Title]')+'"','',
-      'Your response within __two business days__ would be greatly appreciated. Thank you, in advance, for considering this request. Please let me know if you have any questions!','','',
+    setEmailBody([
+      'Dr. ' + ln + ',',
+      '',
+      '**' + f.student_name + '**, a doctoral student in the **' + (f.student_program || f.student_college) + '** program, needs a Graduate Faculty Representative for their dissertation advisory committee and your participation is requested.',
+      '',
+      'You are receiving this request because you are now eligible to serve as a Graduate Faculty Representative with the changes made to the newly approved Graduate Committee Membership policy. (__12.99.99.c0.03-graduate-committee-membership__)',
+      '',
+      'Below is some text regarding this responsibility that can provide some additional information.',
+      '',
+      '**Committee Details:** The committee chair is **' + (f.chair || '[Chair]') + '**' + (f.cochair ? ', Co-Chair is **' + f.cochair + '**' : '') + '.',
+      '**Dissertation Title:** "**' + (f.dissertation || '[Title]') + '**"',
+      '**Proposed Hearing Date:** **' + (f.hearing_date || '[Date TBD]') + '**',
+      '',
+      'Your response within __two business days__ would be greatly appreciated. Thank you, in advance, for considering this request. Please let me know if you have any questions!',
+      '',
+      '',
       'Doctoral Committee',
-      "The student will choose a doctoral committee chair from among the regular graduate faculty members of the doctoral program. Doctoral committees will be composed of a minimum of four Texas A&M University-Corpus Christi graduate faculty members and will include the doctoral committee chair, two other graduate faculty members, and a Graduate Faculty Representative, selected from a different department or college/school. The Associate Provost will officially appoint the doctoral committee. All doctoral committee members representing the student's discipline may be required to review and approve degree plans and participate in qualifying examinations, proposal hearings, comprehensive and final examinations, including defense of dissertation, and all are required to sign relevant documents. More than one dissenting vote in the dissertation defense/final examination will constitute failure. The Graduate Faculty Representative will not be required to attend or evaluate materials related to the comprehensive examination.",'',
+      "The student will choose a doctoral committee chair from among the regular graduate faculty members of the doctoral program. Doctoral committees will be composed of a minimum of four Texas A&M University-Corpus Christi graduate faculty members and will include the doctoral committee chair, two other graduate faculty members, and a Graduate Faculty Representative, selected from a different department or college/school. The Associate Provost will officially appoint the doctoral committee. All doctoral committee members representing the student's discipline may be required to review and approve degree plans and participate in qualifying examinations, proposal hearings, comprehensive and final examinations, including defense of dissertation, and all are required to sign relevant documents. More than one dissenting vote in the dissertation defense/final examination will constitute failure. The Graduate Faculty Representative will not be required to attend or evaluate materials related to the comprehensive examination.",
+      '',
       'Graduate Faculty Representative',
-      "The Graduate Faculty Representative helps ensure the quality of the graduate degree is appropriate for Texas A&M University-Corpus Christi and that students receive fair and reasonable treatment in their graduate experience. All committee members will be provided a copy of the proposal and the dissertation allowing for a two-week turnaround before the scheduled proposal and defense/final examination.",'',
-      'Regards,','Sahith Reddy Vellenki.'
+      "The Graduate Faculty Representative helps ensure the quality of the graduate degree is appropriate for Texas A&M University-Corpus Christi and that students receive fair and reasonable treatment in their graduate experience. All committee members will be provided a copy of the proposal and the dissertation allowing for a two-week turnaround before the scheduled proposal and defense/final examination.",
+      '',
+      'Regards,',
+      'Sahith Reddy Vellenki.'
     ].join('\n'));
-  },[candidate,studentInfo]);
   if(!candidate)return null;
   const send=async()=>{setSending(true);await onSend(candidate,emailBody);setSending(false);};
   return(
