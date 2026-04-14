@@ -1,20 +1,4 @@
-<!DOC
-    {/* Stats tiles — reactive to current filter */}
-    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
-      {[
-        ['Showing',filtered.length,'#f3f4f6','#374151','#9ca3af'],
-        ['Needs GFR',filtered.filter(s=>!s.gfr||s.gfr==='').length,'#fee2e2','#991b1b','#ef4444'],
-        ['GFR Assigned',filtered.filter(s=>s.gfr&&!s.gfr.includes('pending')).length,'#d1fae5','#065f46','#059669'],
-        ['Pending Response',filtered.filter(s=>s.gfr&&s.gfr.includes('pending')).length,'#dbeafe','#1e3a8a','#2563eb'],
-        ['Defense Scheduled',filtered.filter(s=>!!s.defense_date).length,'#fef3c7','#92400e','#d97706'],
-      ].map(([label,val,bg,fg,accent])=>(
-        <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
-          <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-          <div style={{fontSize:10,opacity:0.75,marginTop:1}}>{label}</div>
-        </div>
-      ))}
-    </div>
-TYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -832,22 +816,21 @@ function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
       <span style={{color:'#9ca3af',fontSize:12,whiteSpace:'nowrap'}}>{filtered.length} of {gfrData.length}</span>
     </div>
 
-    {/* Reactive stats — updates with filters */}
+    {/* Live stats — update with current filters */}
     <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
       {[
-        ['Showing',filtered.length,'#f3f4f6','#374151','#9ca3af'],
+        ['Showing',filtered.length,'#f3f4f6','#374151','#d1d5db'],
         ['Free',filtered.filter(r=>r.liveStatus==='Free').length,'#d1fae5','#065f46','#059669'],
         ['Active',filtered.filter(r=>r.liveStatus==='Active').length,'#fef3c7','#92400e','#d97706'],
-        ['Declined',filtered.filter(r=>r.liveStatus==='Declined').length,'#f3f4f6','#374151','#9ca3af'],
+        ['Declined',filtered.filter(r=>r.liveStatus==='Declined').length,'#f3f4f6','#6b7280','#9ca3af'],
         ['Pending',filtered.filter(r=>r.hasPendingRequest).length,'#dbeafe','#1e3a8a','#2563eb'],
       ].map(([label,val,bg,fg,accent])=>(
         <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
           <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-          <div style={{fontSize:10,opacity:0.75,marginTop:1}}>{label}</div>
+          <div style={{fontSize:10,opacity:0.8,marginTop:1}}>{label}</div>
         </div>
       ))}
     </div>
-
     <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#f8f7f4',borderBottom:'1.5px solid #e5e7eb'}}>
@@ -1388,22 +1371,21 @@ function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent
       <button className="btn btn-g btn-sm" onClick={()=>setShowAddModal(true)}>+ Add Student</button>
     </div>
 
-    {/* Reactive stats — updates with filters */}
+    {/* Live stats — update with current filters */}
     <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
       {[
-        ['Showing',filtered.length,'#f3f4f6','#374151','#9ca3af'],
+        ['Showing',filtered.length,'#f3f4f6','#374151','#d1d5db'],
         ['Needs GFR',filtered.filter(s=>!s.gfr||s.gfr==='').length,'#fee2e2','#991b1b','#ef4444'],
         ['GFR Assigned',filtered.filter(s=>s.gfr&&!s.gfr.includes('pending')).length,'#d1fae5','#065f46','#059669'],
-        ['Pending',filtered.filter(s=>s.gfr&&s.gfr.includes('pending')).length,'#dbeafe','#1e3a8a','#2563eb'],
-        ['Defense Set',filtered.filter(s=>!!s.defense_date).length,'#fef3c7','#92400e','#d97706'],
+        ['Pending Response',filtered.filter(s=>s.gfr&&s.gfr.includes('pending')).length,'#dbeafe','#1e3a8a','#2563eb'],
+        ['Defense Scheduled',filtered.filter(s=>!!s.defense_date).length,'#fef3c7','#92400e','#d97706'],
       ].map(([label,val,bg,fg,accent])=>(
         <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
           <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-          <div style={{fontSize:10,opacity:0.75,marginTop:1}}>{label}</div>
+          <div style={{fontSize:10,opacity:0.8,marginTop:1}}>{label}</div>
         </div>
       ))}
     </div>
-
     <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#f8f7f4',borderBottom:'1.5px solid #e5e7eb'}}>
@@ -1826,9 +1808,7 @@ function SettingsView({programs,departments,advisors,updateProgram,updateDepartm
           </tr>}
         </tbody>
       </table>
-    </div>      ))}
-    </div>
-}
+    </div>}
   </div>);
 }
 
