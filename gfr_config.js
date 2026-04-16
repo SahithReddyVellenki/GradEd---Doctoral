@@ -171,6 +171,94 @@ function lookupAdvisor(collegeCode,lastName){
 }
 function lookupDept(name){return _departments.find(function(d){return d.name===name;})||null;}
 
+// ── GFR Name Normalization ────────────────────────────────────────────────────
+// Maps variant/short names in students.gfr → canonical gfr_roster.name
+var GFR_NAME_ALIASES={
+  'robin pizzitola':'Robin Pizzitola (Johnson)',
+  'terri xu':'Terri (Tian) Xu',
+  'catherine schumann':'Catherine Schumann (Quick)',
+  'ethan thompson':'Ethan (Robert) Thompson',
+  'celel ekici':'Celil Ekici',
+  'jose baca':'Jose Baca Garcia',
+  'jennifer smith-engle':'Jennifer Margaret Smith-Engle',
+  'scott king':'Scott A. King',
+  'susan murphy':'Susan Wolff Murphy',
+  'desireé thorpe':'Desiree Thorpe',
+  'desiree thorpe':'Desiree Thorpe',
+  'alexey sadovski':'Alexey L. Sadovski',
+  'yndalecio hinojosa':'Yndalecio "Issac" Hinojosa',
+  'ioana pavel':'Ioana Emilia Pavel',
+  'micheal starek':'Michael Starek',
+  'jose pena':'Joe Pena',
+  'stephanie rollie rodriguez':'Stephanie Rodriguez (Rollie)',
+  'david zhang':'Daqun "David" Zhang',
+  'jeff dillard':'Robert "Jeff" Dillard',
+  'iltai isaac kim':'(Isaac) Iltai Kim',
+  'nikki changchit':'Chuleeporn Changchit',
+  'brooke friley':'Lorin Brooke Friley',
+  'chris andrews':'Christopher Andrews',
+  'corinne zeman':'Corinne M. Zeman',
+  'veysal avsar':'Veysel Avsar',
+  'jim silliman':'James Silliman',
+  'isaac hinojosa':'Yndalecio "Issac" Hinojosa',
+  'ivanete blanco':'Ivanette Blanco',
+  'lon seiger':'Lon H. Seiger',
+  'patrick larkin':'Patrick David Larkin',
+  'greg stunz':'Gregory W. Stunz',
+  'steven seidel':'Steve Seidel',
+  'scott sherman':'W. Scott Sherman',
+  'deborah sebila':'Deborah Sibila',
+  'faezeh babaiesl':'Fabezeh Babaieasl',
+  'manuel piña':'Manuel Pina',
+  'manny piña':'Manuel Pina',
+};
+
+// Normalize a GFR name: strip "(Reassignment)" etc, then check alias map
+function normalizeGfrName(name){
+  if(!name)return'';
+  var clean=name.replace(/\s*\((?:reassignment|reassigned|pending)\)\s*/gi,'').trim();
+  var key=clean.toLowerCase();
+  return GFR_NAME_ALIASES[key]||clean;
+}
+
+// Build a lookup key from a GFR roster name (lowercase, stripped)
+function gfrNameKey(name){
+  if(!name)return'';
+  return name.toLowerCase().replace(/[^a-z ]/g,'').replace(/\s+/g,' ').trim();
+}
+
+// Match a student's gfr field to a roster entry using fuzzy matching
+function matchGfrToRoster(studentGfrName, rosterMap){
+  if(!studentGfrName)return null;
+  var canonical=normalizeGfrName(studentGfrName);
+  // Exact match first
+  if(rosterMap[canonical.toLowerCase()])return rosterMap[canonical.toLowerCase()];
+  // Try key-based match
+  var key=gfrNameKey(canonical);
+  var keys=Object.keys(rosterMap);
+  for(var i=0;i<keys.length;i++){
+    if(gfrNameKey(keys[i])===key)return rosterMap[keys[i]];
+  }
+  // Try last-name match as fallback
+  var last=canonical.split(' ').pop().toLowerCase();
+  for(var j=0;j<keys.length;j++){
+    if(keys[j].toLowerCase().split(' ').pop()===last){
+      // Only if there's one match by last name
+      var matches=keys.filter(function(k){return k.toLowerCase().split(' ').pop()===last;});
+      if(matches.length===1)return rosterMap[matches[0]];
+    }
+  }
+  return null;
+}
+
+// Explicitly attach helpers to window so Babel-compiled inline scripts can find them
+if(typeof window!=='undefined'){
+  window.GFR_NAME_ALIASES=GFR_NAME_ALIASES;
+  window.normalizeGfrName=normalizeGfrName;
+  window.gfrNameKey=gfrNameKey;
+  window.matchGfrToRoster=matchGfrToRoster;
+}
+
 var PROGRAM_DEGREE_MAP={
   'CINS':'EDD',
   'EDLD':'EDD',
