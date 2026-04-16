@@ -45,194 +45,10 @@ td,th{vertical-align:middle}
 
 <script src="gfr_seed.js"></script>
 <script src="students_seed.js"></script>
+<script src="faculty_seed.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script>
-var SUPABASE_URL='https://phrxljphxthtcdnjubxd.supabase.co';
-var SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBocnhsanBoeHRodGNkbmp1YnhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2ODc0MDQsImV4cCI6MjA5MTI2MzQwNH0.A8m_hyTyVh9Jd0cIDN0xQc2St0RC3xl5xBp6xSlTJeU';
-var SP_SITE='https://tamucc.sharepoint.com/sites/CGS-GraduateStackedCourses-group';
-var SP_BACKUP_FOLDER='/sites/CGS-GraduateStackedCourses-group/Shared%20Documents/GFR%20Backups';
-var BACKUP_INTERVAL_DAYS=14;
-var LAST_BACKUP_KEY='gfr_last_backup_v3';
-var SB_H={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
-
-function sbGet(t,q){return fetch(SUPABASE_URL+'/rest/v1/'+t+'?'+(q||''),{headers:SB_H}).then(function(r){if(!r.ok)return r.text().then(function(e){throw new Error('GET '+t+' '+r.status+': '+e);});return r.json();});}
-function sbPost(t,b){return fetch(SUPABASE_URL+'/rest/v1/'+t,{method:'POST',headers:SB_H,body:JSON.stringify(b)}).then(function(r){if(!r.ok)return r.text().then(function(e){throw new Error('POST '+t+' '+r.status+': '+e);});return r.json();});}
-function sbPatch(t,id,b){var h=Object.assign({},SB_H,{'Prefer':'return=representation'});return fetch(SUPABASE_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'PATCH',headers:h,body:JSON.stringify(b)}).then(function(r){if(!r.ok)return r.text().then(function(e){throw new Error('PATCH '+r.status+': '+e);});return r.json();});}
-function sbDelete(t,id){return fetch(SUPABASE_URL+'/rest/v1/'+t+'?id=eq.'+id,{method:'DELETE',headers:SB_H}).then(function(r){if(!r.ok)throw new Error('DELETE '+r.status);});}
-
-function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
-
-function computeGfrStatus(r){
-  if(r.status==='Active'&&r.grad_dt&&new Date(r.grad_dt)<=new Date())return'Free';
-  return r.status;
-}
-function withLive(r){
-  var ls=computeGfrStatus(r);
-  return Object.assign({},r,{liveStatus:ls,displayStudent:ls==='Active'?r.current_student:'',displayGrad:ls==='Active'?r.grad_expected:'',displayProgram:ls==='Active'?r.program:'',displayStudentCollege:ls==='Active'?r.current_student_college:''});
-}
-
-function parseGradDate(defenseDate,anticipatedGrad){
-  if(defenseDate){
-    var m=String(defenseDate).match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
-    if(m){var yr=parseInt(m[3]);if(yr<100)yr+=2000;var d=new Date(yr,parseInt(m[1])-1,parseInt(m[2]));if(!isNaN(d.getTime()))return d.toISOString().slice(0,10);}
-    if(String(defenseDate).match(/^\d{4}-\d{2}-\d{2}$/))return String(defenseDate);
-  }
-  if(anticipatedGrad){
-    var t=String(anticipatedGrad).trim().toLowerCase();
-    var yr2=t.match(/(\d{4})/);if(!yr2)return null;
-    var year=parseInt(yr2[1]);
-    if(t.includes('spring'))return year+'-06-01';
-    if(t.includes('summer'))return year+'-09-01';
-    if(t.includes('fall'))return(year+1)+'-01-15';
-  }
-  return null;
-}
-
-function buildBackupFilename(){
-  var now=new Date();
-  var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return'GFR_Tracking_'+months[now.getMonth()]+'-'+now.getFullYear()+'_'+(now.getDate()<=15?'1':'2')+'.csv';
-}
-function buildCSV(records, requests, students){
-  // === Sheet 1: GFR Faculty Roster ===
-  var rows=[['=== GFR FACULTY ROSTER ===']];
-  rows.push(['Professor','College','Department','Academic Title','Status','Has Pending Request','Current Student','Student College','Grad Expected','Program','Decline Count','Notes','Last Updated']);
-  var today=new Date().toLocaleDateString();
-  (records||[]).forEach(function(r){
-    rows.push([r.name||'',r.college||'',r.department||'',r.title||'',r.liveStatus||'',
-      r.hasPendingRequest?'Yes':'No',r.displayStudent||'',r.displayStudentCollege||'',
-      r.displayGrad||'',r.displayProgram||'',r.declineCount||0,r.notes||'',today]);
-  });
-
-  // === Sheet 2: Doctoral Students ===
-  rows.push([]);
-  rows.push(['=== DOCTORAL STUDENTS ===']);
-  rows.push(['Last Name','First Name','Full Name','Student ID','College','Degree','Program','Department',
-    'Coordinator','Dept Chair','Academic Advisor','Entry Date','Anticipated Grad',
-    'Chair','Co-Chair','Committee Members','GFR','External Member',
-    'Proposal Date','Defense Date','Dissertation Title',
-    'Form A','Form B','Form C','Form D','Form E','Form F','Form G','Form H','Form K',
-    'Candidacy Letter','GFR Letter Date','Comments','Email']);
-  (students||[]).forEach(function(s){
-    rows.push([s.last_name||'',s.first_name||'',s.full_name||'',s.student_id||'',
-      s.college_code||'',s.degree||'',s.program_name||s.major||'',s.department||'',
-      s.coordinator||'',s.dept_chair||'',s.academic_advisor||'',s.entry_date||'',
-      s.anticipated_grad||'',s.chair||'',s.cochair||'',s.committee_members||'',
-      s.gfr||'',s.external_member||'',s.proposal_date||'',s.defense_date||'',
-      s.dissertation_title||'',s.form_a||'',s.form_b||'',s.form_c||'',s.form_d||'',
-      s.form_e||'',s.form_f||'',s.form_g||'',s.form_h||'',s.form_k||'',
-      s.candidacy_letter_date||'',s.gfr_letter_date||'',s.comments||'',s.email||'']);
-  });
-
-  // === Sheet 3: GFR Requests Log ===
-  rows.push([]);
-  rows.push(['=== GFR REQUESTS LOG ===']);
-  rows.push(['Student','College','Program','GFR Name','GFR College','Status','Sent Date','Deadline','Chair','Dissertation']);
-  (requests||[]).forEach(function(rq){
-    rows.push([rq.student_name||'',rq.student_college||'',rq.student_program||'',
-      rq.gfr_name||'',rq.gfr_college||'',rq.status||'',
-      rq.sent_at?new Date(rq.sent_at).toLocaleDateString():'',
-      rq.deadline?new Date(rq.deadline).toLocaleDateString():'',
-      rq.chair||'',rq.dissertation||'']);
-  });
-
-  return rows.map(function(row){
-    return row.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');
-  }).join('\r\n');
-}
-
-function exportCSV(records, requests, students){
-  var csv=buildCSV(records,requests,students);
-  var a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download=buildBackupFilename();
-  a.click();URL.revokeObjectURL(a.href);
-}
-
-// Students-only export (for the Students tab export button)
-function exportStudentsCSV(students){
-  var rows=[['Last Name','First Name','Full Name','Student ID','College','Degree','Program',
-    'Department','Coordinator','Dept Chair','Academic Advisor','Entry Date','Anticipated Grad',
-    'Chair','Co-Chair','Committee Members','GFR','Proposal Date','Defense Date','Dissertation Title',
-    'Form A','Form B','Form C','Form D','Form E','Form F','Form G','Form H','Form K','Comments','Email']];
-  (students||[]).forEach(function(s){
-    rows.push([s.last_name||'',s.first_name||'',s.full_name||'',s.student_id||'',
-      s.college_code||'',s.degree||'',s.program_name||s.major||'',s.department||'',
-      s.coordinator||'',s.dept_chair||'',s.academic_advisor||'',s.entry_date||'',
-      s.anticipated_grad||'',s.chair||'',s.cochair||'',s.committee_members||'',
-      s.gfr||'',s.proposal_date||'',s.defense_date||'',s.dissertation_title||'',
-      s.form_a||'',s.form_b||'',s.form_c||'',s.form_d||'',s.form_e||'',
-      s.form_f||'',s.form_g||'',s.form_h||'',s.form_k||'',s.comments||'',s.email||'']);
-  });
-  var csv=rows.map(function(row){return row.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');}).join('\r\n');
-  var a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download='Students_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click();URL.revokeObjectURL(a.href);
-}
-
-async function backupToSharePoint(records, requests, students, notify){
-  var csv=buildCSV(records,requests,students);
-  var fileName=buildBackupFilename();
-  var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
-  var uploadUrl=SP_SITE+'/_api/web/GetFolderByServerRelativeUrl(\''+SP_BACKUP_FOLDER+'\')/Files/add(url=\''+fileName+'\',overwrite=true)';
-  try{
-    var dr=await fetch(SP_SITE+'/_api/contextinfo',{method:'POST',
-      headers:{'Accept':'application/json;odata=verbose','Content-Type':'application/json;odata=verbose'},
-      credentials:'include'});
-    if(!dr.ok)throw new Error('Not logged in to SharePoint');
-    var digest=(await dr.json()).d.GetContextWebInformation.FormDigestValue;
-    var ab=await blob.arrayBuffer();
-    var ur=await fetch(uploadUrl,{method:'POST',
-      headers:{'Accept':'application/json;odata=verbose','X-RequestDigest':digest},
-      credentials:'include',body:ab});
-    if(ur.ok){
-      localStorage.setItem(LAST_BACKUP_KEY,new Date().toISOString());
-      notify('✅ Backup saved to SharePoint: '+fileName+' (GFR faculty + '+  (students||[]).length+' students + requests)');
-      return true;
-    }
-    throw new Error('Upload failed: '+ur.status);
-  }catch(e){
-    exportCSV(records,requests,students);
-    window.open(SP_SITE+'/Shared%20Documents/Forms/AllItems.aspx','_blank');
-    localStorage.setItem(LAST_BACKUP_KEY,new Date().toISOString());
-    notify('📁 Downloaded '+fileName+' (includes all students & GFR data) — upload to SharePoint GFR Backups folder','warning');
-    return false;
-  }
-}
-
-function shouldAutoBackup(){var last=localStorage.getItem(LAST_BACKUP_KEY);if(!last)return true;return(Date.now()-new Date(last).getTime())/86400000>=BACKUP_INTERVAL_DAYS;}
-
-var COLLEGE_MAP={'COEHD':'College of Education & Human Development','COSN':'College of Science','CECS':'College of Engineering & Computer Science','CONHS':'College of Nursing & Health Sciences','COB':'College of Business','COLA':'College of Liberal Arts','SAMC':'School of Arts, Media & Communication'};
-var COLLEGE_CODES=['COEHD','COSN','CECS','CONHS','COB','COLA','SAMC'];
-var STATUS_CFG={Free:{color:'#059669',bg:'#d1fae5',label:'Free'},Active:{color:'#d97706',bg:'#fef3c7',label:'Active'},Declined:{color:'#6b7280',bg:'#f3f4f6',label:'Declined'}};
-var PENDING_CFG={color:'#2563eb',bg:'#dbeafe'};
-var DB_GFR_FIELDS=['name','college','title','department','notes','status','current_student','current_student_college','grad_expected','grad_dt','program'];
-function toDbPatch(obj){return Object.fromEntries(DB_GFR_FIELDS.filter(function(k){return k in obj;}).map(function(k){return[k,obj[k]];}));}
-
-var _programs=[];var _advisors=[];var _departments=[];
-function lookupProgram(code){return _programs.find(function(p){return p.code===code;})||null;}
-function lookupAdvisor(collegeCode,lastName){
-  if(!lastName||!collegeCode)return'';
-  var first=lastName.trim()[0].toUpperCase();
-  var a=_advisors.find(function(a){return a.college_code===collegeCode&&first>=a.last_name_start&&first<=a.last_name_end;});
-  return a?a.advisor_name:'';
-}
-function lookupDept(name){return _departments.find(function(d){return d.name===name;})||null;}
-
-var PROGRAM_DEGREE_MAP={
-  'CINS':'EDD',
-  'EDLD':'EDD',
-  'CNED':'PHD',
-  'CMSS':'PHD',
-  'MARB':'PHD',
-  'COSC':'PHD',
-  'NURP':'DNP',
-  'GSCM':'PHD'
-};
-
-</script>
+<script src="gfr_config.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useMemo,useCallback,useRef}=React;
@@ -294,31 +110,19 @@ function NextCandidatePopup({candidate,studentInfo,totalCandidates,currentIdx,on
     if(!candidate||!studentInfo)return;
     const ln=candidate.name.split(' ').pop();
     const f=studentInfo;
-    setEmailBody([
-      'Dr. ' + ln + ',',
-      '',
-      '**' + f.student_name + '**, a doctoral student in the **' + (f.student_program || f.student_college) + '** program, needs a Graduate Faculty Representative for their dissertation advisory committee and your participation is requested.',
-      '',
-      'You are receiving this request because you are now eligible to serve as a Graduate Faculty Representative with the changes made to the newly approved Graduate Committee Membership policy. (__12.99.99.c0.03-graduate-committee-membership__)',
-      '',
-      'Below is some text regarding this responsibility that can provide some additional information.',
-      '',
-      '**Committee Details:** The committee chair is **' + (f.chair || '[Chair]') + '**' + (f.cochair ? ', Co-Chair is **' + f.cochair + '**' : '') + '.',
-      '**Dissertation Title:** "**' + (f.dissertation || '[Title]') + '**"',
-      '**Proposed Hearing Date:** **' + (f.hearing_date || '[Date TBD]') + '**',
-      '',
-      'Your response within __two business days__ would be greatly appreciated. Thank you, in advance, for considering this request. Please let me know if you have any questions!',
-      '',
-      '',
+    setEmailBody(['Dr. '+ln+',','',
+      f.student_name+', a doctoral student in the '+(f.student_program||f.student_college)+' program, needs a Graduate Faculty Representative for their dissertation advisory committee and your participation is requested.','',
+      'You are receiving this request because you are now eligible to serve as a Graduate Faculty Representative with the changes made to the newly approved Graduate Committee Membership policy. (__12.99.99.c0.03-graduate-committee-membership__)','',
+      'Below is some text regarding this responsibility that can provide some additional information.','',
+      'The committee chair is '+(f.chair||'[Chair]')+(f.cochair?', Co-Chair is '+f.cochair:'')+', and the dissertation title is "'+(f.dissertation||'[Title]')+'"','',
+      'Your response within __two business days__ would be greatly appreciated. Thank you, in advance, for considering this request. Please let me know if you have any questions!','','',
       'Doctoral Committee',
-      "The student will choose a doctoral committee chair from among the regular graduate faculty members of the doctoral program. Doctoral committees will be composed of a minimum of four Texas A&M University-Corpus Christi graduate faculty members and will include the doctoral committee chair, two other graduate faculty members, and a Graduate Faculty Representative, selected from a different department or college/school. The Associate Provost will officially appoint the doctoral committee. All doctoral committee members representing the student's discipline may be required to review and approve degree plans and participate in qualifying examinations, proposal hearings, comprehensive and final examinations, including defense of dissertation, and all are required to sign relevant documents. More than one dissenting vote in the dissertation defense/final examination will constitute failure. The Graduate Faculty Representative will not be required to attend or evaluate materials related to the comprehensive examination.",
-      '',
+      "The student will choose a doctoral committee chair from among the regular graduate faculty members of the doctoral program. Doctoral committees will be composed of a minimum of four Texas A&M University-Corpus Christi graduate faculty members and will include the doctoral committee chair, two other graduate faculty members, and a Graduate Faculty Representative, selected from a different department or college/school. The Associate Provost will officially appoint the doctoral committee. All doctoral committee members representing the student's discipline may be required to review and approve degree plans and participate in qualifying examinations, proposal hearings, comprehensive and final examinations, including defense of dissertation, and all are required to sign relevant documents. More than one dissenting vote in the dissertation defense/final examination will constitute failure. The Graduate Faculty Representative will not be required to attend or evaluate materials related to the comprehensive examination.",'',
       'Graduate Faculty Representative',
-      "The Graduate Faculty Representative helps ensure the quality of the graduate degree is appropriate for Texas A&M University-Corpus Christi and that students receive fair and reasonable treatment in their graduate experience. All committee members will be provided a copy of the proposal and the dissertation allowing for a two-week turnaround before the scheduled proposal and defense/final examination.",
-      '',
-      'Regards,',
-      'Sahith Reddy Vellenki.'
+      "The Graduate Faculty Representative helps ensure the quality of the graduate degree is appropriate for Texas A&M University-Corpus Christi and that students receive fair and reasonable treatment in their graduate experience. All committee members will be provided a copy of the proposal and the dissertation allowing for a two-week turnaround before the scheduled proposal and defense/final examination.",'',
+      'Regards,','Sahith Reddy Vellenki.'
     ].join('\n'));
+  },[candidate,studentInfo]);
   if(!candidate)return null;
   const send=async()=>{setSending(true);await onSend(candidate,emailBody);setSending(false);};
   return(
@@ -366,7 +170,87 @@ function NextCandidatePopup({candidate,studentInfo,totalCandidates,currentIdx,on
 }
 
 // ── Shared field component ───────────────────────────────────────────────────
-function Field({label,value,onChange,type='text',options,readOnly,rows,placeholder}){
+function Field({label,value,onChange,type='text',options,readOnly,rows,placeholder,autoList,multiMax}){
+  const [acOpen,setAcOpen]=useState(false);
+  const [acInput,setAcInput]=useState('');
+  const acRef=useRef(null);
+
+  // Multi-select autocomplete (comma-separated with token chips, max N)
+  if(autoList&&multiMax){
+    const tokens=(value||'').split(',').map(t=>t.trim()).filter(Boolean);
+    const q=acInput.toLowerCase().trim();
+    const matches=q.length>=1?autoList.filter(n=>!tokens.includes(n)&&n.toLowerCase().includes(q)).slice(0,8):[];
+    const canAdd=tokens.length<multiMax;
+    const addToken=n=>{
+      const next=[...tokens,n].slice(0,multiMax);
+      onChange(next.join(', '));
+      setAcInput('');
+      setAcOpen(false);
+    };
+    const removeToken=i=>{
+      const next=tokens.filter((_,idx)=>idx!==i);
+      onChange(next.join(', '));
+    };
+    return(
+      <div style={{position:'relative'}} ref={acRef}>
+        <label className="fl">{label} <span style={{color:'#9ca3af',fontWeight:400,fontSize:11}}>({tokens.length}/{multiMax})</span></label>
+        <div className="fi" style={{display:'flex',flexWrap:'wrap',gap:4,minHeight:36,padding:'5px 8px',alignItems:'center',cursor:'text'}}
+          onClick={()=>{if(canAdd)setAcOpen(true);}}>
+          {tokens.map((t,i)=>(
+            <span key={i} style={{background:'#d1fae5',color:'#065f46',borderRadius:12,padding:'2px 8px',fontSize:12,display:'inline-flex',alignItems:'center',gap:4}}>
+              {t}
+              <button type="button" onClick={e=>{e.stopPropagation();removeToken(i);}} style={{background:'none',border:'none',color:'#065f46',cursor:'pointer',padding:0,fontSize:14,lineHeight:1}}>×</button>
+            </span>
+          ))}
+          {canAdd&&<input style={{border:'none',outline:'none',flex:1,minWidth:120,fontSize:13,fontFamily:'inherit',background:'transparent'}}
+            value={acInput} placeholder={tokens.length===0?(placeholder||'Type to search faculty…'):'Add another…'}
+            onChange={e=>{setAcInput(e.target.value);setAcOpen(true);}}
+            onFocus={()=>setAcOpen(true)}
+            onBlur={()=>setTimeout(()=>setAcOpen(false),200)}
+            onKeyDown={e=>{
+              if(e.key==='Backspace'&&!acInput&&tokens.length>0){removeToken(tokens.length-1);}
+              if(e.key==='Enter'&&acInput.trim()){e.preventDefault();addToken(acInput.trim());}
+              if(e.key===','){e.preventDefault();if(acInput.trim())addToken(acInput.trim());}
+            }}/>}
+        </div>
+        {acOpen&&matches.length>0&&(
+          <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:50,background:'#fff',border:'1.5px solid #059669',borderRadius:'0 0 7px 7px',maxHeight:180,overflowY:'auto',boxShadow:'0 4px 16px rgba(0,0,0,0.12)'}}>
+            {matches.map(n=>(
+              <div key={n} style={{padding:'6px 11px',fontSize:13,cursor:'pointer',borderBottom:'1px solid #f3f4f6'}}
+                onMouseDown={e=>{e.preventDefault();addToken(n);}}>
+                {n}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Single-value autocomplete
+  if(autoList){
+    const q=(acInput||value||'').toLowerCase();
+    const matches=q.length>=1?autoList.filter(n=>n.toLowerCase().includes(q)).slice(0,8):[];
+    return(
+      <div style={{position:'relative'}} ref={acRef}>
+        <label className="fl">{label}</label>
+        <input className="fi" value={value||''} placeholder={placeholder||'Type to search faculty…'}
+          onChange={e=>{onChange(e.target.value);setAcInput(e.target.value);setAcOpen(true);}}
+          onFocus={()=>setAcOpen(true)}
+          onBlur={()=>setTimeout(()=>setAcOpen(false),200)}/>
+        {acOpen&&matches.length>0&&(
+          <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:50,background:'#fff',border:'1.5px solid #059669',borderRadius:'0 0 7px 7px',maxHeight:180,overflowY:'auto',boxShadow:'0 4px 16px rgba(0,0,0,0.12)'}}>
+            {matches.map(n=>(
+              <div key={n} style={{padding:'6px 11px',fontSize:13,cursor:'pointer',borderBottom:'1px solid #f3f4f6'}}
+                onMouseDown={e=>{e.preventDefault();onChange(n);setAcInput('');setAcOpen(false);}}>
+                {n}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
   return(
     <div>
       <label className="fl">{label}</label>
@@ -385,6 +269,35 @@ function Field({label,value,onChange,type='text',options,readOnly,rows,placehold
   );
 }
 
+// ── Delete Dialog (with notes) ──────────────────────────────────────────────
+function DeleteWithNotesDialog({message,entityType,entityName,entityData,onConfirm,onCancel}){
+  const [notes,setNotes]=useState('');
+  const [saving,setSaving]=useState(false);
+  const doDelete=async()=>{
+    setSaving(true);
+    await onConfirm(notes);
+    setSaving(false);
+  };
+  return(
+    <div className="modal-bg" style={{zIndex:900}}>
+      <div style={{background:'#fff',borderRadius:12,padding:28,maxWidth:440,width:'100%'}}>
+        <div style={{fontSize:32,marginBottom:12,textAlign:'center'}}>⚠️</div>
+        <div style={{fontSize:14,textAlign:'center',marginBottom:16,lineHeight:1.6}}>{message}</div>
+        <div style={{marginBottom:12}}>
+          <label className="fl">Reason / Notes (optional)</label>
+          <textarea className="fi" value={notes} onChange={e=>setNotes(e.target.value)} rows={3}
+            placeholder="Why is this being deleted? e.g. Faculty retired, duplicate entry, left university…"
+            style={{resize:'vertical'}}/>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-r" onClick={doDelete} disabled={saving} style={{flex:1,justifyContent:'center',opacity:saving?0.7:1}}>{saving?'Deleting…':'🗑 Delete'}</button>
+          <button className="btn btn-o" onClick={onCancel} style={{flex:1,justifyContent:'center'}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Root App ─────────────────────────────────────────────────────────────────
 function App(){
   const [view,setView]=useState('committee');
@@ -394,6 +307,8 @@ function App(){
   const [programs,setPrograms]=useState([]);
   const [advisors,setAdvisors]=useState([]);
   const [departments,setDepartments]=useState([]);
+  const [faculty,setFaculty]=useState([]);
+  const [deletionLog,setDeletionLog]=useState([]);
   const [loading,setLoading]=useState(true);
   const [seeding,setSeeding]=useState(false);
   const [seedProg,setSeedProg]=useState('');
@@ -404,10 +319,14 @@ function App(){
   const [showBackupModal,setShowBackupModal]=useState(false);
   const [nextPopup,setNextPopup]=useState(null);
   const [confirmDlg,setConfirmDlg]=useState(null);
+  const [deleteDlg,setDeleteDlg]=useState(null);
   const autoBackupDone=useRef(false);
 
   const notify=(msg,type='success')=>{setNotif({msg,type});setTimeout(()=>setNotif(null),4500);};
   const confirm=(msg,cb)=>setConfirmDlg({msg,cb});
+
+  // Faculty name list for autocomplete
+  const facultyNames=useMemo(()=>faculty.map(f=>f.name).sort(),[faculty]);
 
   const gfrWithPending=useMemo(()=>{
     const ids=new Set(requests.filter(r=>r.status==='pending').map(r=>String(r.gfr_id)));
@@ -415,19 +334,39 @@ function App(){
     requests.filter(r=>['declined','no_response'].includes(r.status)).forEach(r=>{
       declinedMap[String(r.gfr_id)]=(declinedMap[String(r.gfr_id)]||0)+1;
     });
-    return gfrData.map(r=>({...r,hasPendingRequest:ids.has(String(r.id)),declineCount:declinedMap[String(r.id)]||0}));
-  },[gfrData,requests]);
+    // Build set of GFR names actively assigned to a student (non-pending)
+    const activeGfrNames=new Set();
+    (students||[]).forEach(s=>{
+      if(s&&typeof s.gfr==='string'&&s.gfr.trim()&&!s.gfr.toLowerCase().includes('(pending)')){
+        activeGfrNames.add(normalizeGfrName(s.gfr).toLowerCase());
+      }
+    });
+    return gfrData.map(r=>{
+      const hasPending=ids.has(String(r.id));
+      const decline=declinedMap[String(r.id)]||0;
+      // Override liveStatus: if roster says Active but no student points to them, treat as Free
+      let derivedLive=r.liveStatus;
+      if(r.liveStatus==='Active'&&!activeGfrNames.has(r.name.toLowerCase())&&!activeGfrNames.has(gfrNameKey(r.name))){
+        derivedLive='Free';
+      } else if(r.liveStatus==='Free'&&(activeGfrNames.has(r.name.toLowerCase())||activeGfrNames.has(gfrNameKey(r.name)))){
+        derivedLive='Active';
+      }
+      return{...r,hasPendingRequest:hasPending,declineCount:decline,liveStatus:derivedLive};
+    });
+  },[gfrData,requests,students]);
 
   const loadData=useCallback(async()=>{
     try{
       setLoading(true);setError(null);
-      const [gfrs,reqs,studs,progs,advs,depts]=await Promise.all([
+      const [gfrs,reqs,studs,progs,advs,depts,facs,delLog]=await Promise.all([
         sbGet('gfr_roster','order=name.asc&limit=1000'),
         sbGet('gfr_requests','order=created_at.desc&limit=1000'),
         sbGet('students','order=last_name.asc&limit=1000'),
         sbGet('programs','order=name.asc'),
         sbGet('advisors','order=college_code.asc'),
         sbGet('departments','order=name.asc'),
+        sbGet('faculty','order=name.asc&limit=2000').catch(()=>[]),
+        sbGet('deletion_log','order=deleted_at.desc&limit=500').catch(()=>[]),
       ]);
       setGfrData(gfrs.map(withLive));
       setRequests(reqs);
@@ -435,6 +374,8 @@ function App(){
       setPrograms(progs);
       setAdvisors(advs);
       setDepartments(depts);
+      setFaculty(facs);
+      setDeletionLog(delLog);
       // Update global caches
       _programs=progs;_advisors=advs;_departments=depts;
     }catch(e){setError(e.message);}
@@ -442,14 +383,14 @@ function App(){
   },[]);
 
   useEffect(()=>{
-    if(!loading&&(gfrData.length>0||students.length>0)&&!autoBackupDone.current&&typeof shouldAutoBackup==="function"&&shouldAutoBackup()){
+    if(!loading&&(gfrData.length>0||students.length>0)&&!autoBackupDone.current&&shouldAutoBackup()){
       autoBackupDone.current=true;
       setTimeout(()=>setShowBackupModal(true),1500);
     }
   },[loading,gfrData,students]);
 
   const seedTable=async(which)=>{
-    if(!confirm('Load seed data into Supabase? Only do this once.'))return;
+    if(!window.confirm('Load seed data into Supabase? Only do this once.'))return;
     setSeeding(true);
     try{
       if(which==='gfr'||which==='all'){
@@ -463,6 +404,13 @@ function App(){
         for(let i=0;i<STUDENTS_DATA.length;i+=50){
           setSeedProg('Loading students... '+Math.min(i+50,STUDENTS_DATA.length)+' / '+STUDENTS_DATA.length);
           await sbPost('students',STUDENTS_DATA.slice(i,i+50));
+        }
+      }
+      if(which==='faculty'||which==='all'){
+        const fsd=typeof FACULTY_SEED_DATA!=='undefined'?FACULTY_SEED_DATA:[];
+        for(let i=0;i<fsd.length;i+=50){
+          setSeedProg('Loading faculty directory... '+Math.min(i+50,fsd.length)+' / '+fsd.length);
+          await sbPost('faculty',fsd.slice(i,i+50));
         }
       }
       setSeeding(false);setSeedProg('');
@@ -494,11 +442,20 @@ function App(){
   },[]);
 
   const deleteGFR=useCallback((id,name)=>{
-    confirm('Delete '+name+' from the GFR roster? This cannot be undone.',async()=>{
-      try{await sbDelete('gfr_roster',id);setGfrData(prev=>prev.filter(r=>r.id!==id));notify('Deleted '+name);setConfirmDlg(null);}
-      catch(e){notify('Delete failed: '+e.message,'error');setConfirmDlg(null);}
+    const gfr=gfrData.find(r=>r.id===id);
+    setDeleteDlg({message:'Delete '+name+' from the GFR roster?',entityType:'gfr',entityName:name,entityData:gfr||{},
+      onConfirm:async(notes)=>{
+        try{
+          await sbPost('deletion_log',[{entity_type:'gfr',entity_name:name,entity_data:gfr||{},notes:notes||''}]);
+          await sbDelete('gfr_roster',id);
+          setGfrData(prev=>prev.filter(r=>r.id!==id));
+          setDeletionLog(prev=>[{entity_type:'gfr',entity_name:name,entity_data:gfr||{},notes:notes||'',deleted_at:new Date().toISOString()},...prev]);
+          notify('Deleted '+name);
+          setDeleteDlg(null);
+        }catch(e){notify('Delete failed: '+e.message,'error');setDeleteDlg(null);}
+      }
     });
-  },[]);
+  },[gfrData]);
 
   // ── Student operations ─────────────────────────────────────────────────────
   const updateStudent=useCallback(async(id,patch)=>{
@@ -515,11 +472,39 @@ function App(){
   },[]);
 
   const deleteStudent=useCallback((id,name)=>{
-    confirm('Delete student '+name+'? This cannot be undone.',async()=>{
-      try{await sbDelete('students',id);setStudents(prev=>prev.filter(s=>s.id!==id));notify('Deleted '+name);setConfirmDlg(null);}
-      catch(e){notify('Delete failed: '+e.message,'error');setConfirmDlg(null);}
+    const student=students.find(s=>s.id===id);
+    setDeleteDlg({message:'Delete student '+name+'?',entityType:'student',entityName:name,entityData:student||{},
+      onConfirm:async(notes)=>{
+        try{
+          // Clean up GFR roster if student had a GFR
+          if(student&&student.gfr){
+            const gfrName=normalizeGfrName(student.gfr);
+            const gfr=gfrData.find(r=>{
+              if(!r.current_student)return false;
+              return r.current_student===student.full_name||
+                     r.current_student===(student.last_name+', '+student.first_name)||
+                     r.name.toLowerCase()===gfrName.toLowerCase()||
+                     gfrNameKey(r.name)===gfrNameKey(gfrName);
+            });
+            if(gfr&&(gfr.liveStatus==='Active'||gfr.status==='Active')){
+              const today=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+              const note='Student '+name+' deleted on '+today+' — GFR reset to Free';
+              const existing=(gfr.notes||'').trim();
+              await updateGFR(gfr.id,{name:gfr.name,college:gfr.college,title:gfr.title,department:gfr.department,
+                status:'Free',current_student:'',current_student_college:'',grad_expected:'',grad_dt:null,program:'',
+                notes:existing?existing+'\n'+note:note});
+            }
+          }
+          await sbPost('deletion_log',[{entity_type:'student',entity_name:name,entity_data:student||{},notes:notes||''}]);
+          await sbDelete('students',id);
+          setStudents(prev=>prev.filter(s=>s.id!==id));
+          setDeletionLog(prev=>[{entity_type:'student',entity_name:name,entity_data:student||{},notes:notes||'',deleted_at:new Date().toISOString()},...prev]);
+          notify('Deleted '+name);
+          setDeleteDlg(null);
+        }catch(e){notify('Delete failed: '+e.message,'error');setDeleteDlg(null);}
+      }
     });
-  },[]);
+  },[students,gfrData,updateGFR]);
 
   // ── Request operations ─────────────────────────────────────────────────────
   const addRequest=useCallback(async(req)=>{
@@ -536,45 +521,14 @@ function App(){
     const gfr=gfrData.find(r=>String(r.id)===String(req.gfr_id));
     const today=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const note='Accepted GFR request for '+req.student_name+' on '+today;
-
-    // Find the student record to pull authoritative data from students tab
-    const student=students.find(s=>
-      s.full_name===req.student_name||
-      (s.first_name+' '+s.last_name)===req.student_name||
-      s.full_name===(req.student_name)
-    );
-    const gradExpected=student?student.anticipated_grad||req.grad_expected||'':req.grad_expected||'';
-    const studentCollege=student?student.college_code||req.student_college||'':req.student_college||'';
-    const studentProgram=student?student.program_name||student.major||req.student_program||'':req.student_program||'';
-    const gradDt=parseGradDate(student?student.defense_date||'':req.grad_expected||'',gradExpected);
-
-    // 1. Update GFR professor → Active with student info from students tab
+    const gradDt=parseGradDate(req.grad_expected||'',req.anticipated_grad||'');
     if(gfr){
       const existing=(gfr.notes||'').trim();
-      await updateGFR(gfr.id,{
-        name:gfr.name,college:gfr.college,title:gfr.title,department:gfr.department,
-        grad_dt:gradDt||gfr.grad_dt||null,
-        status:'Active',
-        current_student:req.student_name||'',
-        current_student_college:studentCollege,
-        grad_expected:gradExpected,
-        program:studentProgram,
-        notes:existing?existing+'\n'+note:note
-      });
+      await updateGFR(gfr.id,{name:gfr.name,college:gfr.college,title:gfr.title,department:gfr.department,grad_dt:gradDt||gfr.grad_dt||null,status:'Active',current_student:req.student_name||'',current_student_college:req.student_college||'',grad_expected:req.grad_expected||'',program:req.student_program||'',notes:existing?existing+'\n'+note:note});
     }
-
-    // 2. Update student record → gfr = professor name (remove "(pending)")
-    if(student){
-      await updateStudent(student.id,{gfr:req.gfr_name});
-    } else {
-      // fallback: find by matching name substring
-      const stuByName=students.find(s=>s.full_name&&s.full_name.toLowerCase().includes(req.student_name.toLowerCase().split(',')[0]));
-      if(stuByName) await updateStudent(stuByName.id,{gfr:req.gfr_name});
-    }
-
     await patchRequest(req.id,{status:'accepted'});
-    notify('✅ '+req.gfr_name+' accepted — GFR faculty and student record updated');
-  },[gfrData,students,updateGFR,updateStudent,patchRequest]);
+    notify('✅ '+req.gfr_name+' accepted — status set to Active');
+  },[gfrData,updateGFR,patchRequest]);
 
   const handleDecline=useCallback(async(req,outcome)=>{
     const gfr=gfrData.find(r=>String(r.id)===String(req.gfr_id));
@@ -582,11 +536,6 @@ function App(){
     const note=outcome==='declined'?'Declined GFR request for '+req.student_name+' on '+today:'No response to GFR request for '+req.student_name+' on '+today+' (48hr passed)';
     await patchRequest(req.id,{status:outcome==='declined'?'declined':'no_response'});
     if(gfr)await appendGfrNote(gfr,note);
-    // Clear student's pending GFR text so they show as needing GFR again
-    const student=students.find(s=>s.full_name===req.student_name);
-    if(student&&(student.gfr||'').includes('(pending)')){
-      await updateStudent(student.id,{gfr:''});
-    }
     notify((outcome==='declined'?'❌ Declined':'⏰ No reply')+' — finding next candidate…','warning');
     // Build next candidate pool
     const tried=new Set(requests.filter(r=>r.student_name===req.student_name&&(r.status==='pending'||r.status==='declined'||r.status==='no_response')).map(r=>String(r.gfr_id)));
@@ -661,6 +610,70 @@ function App(){
     }catch(e){notify('Update failed: '+e.message,'error');}
   },[advisors]);
 
+  // ── Faculty directory operations ────────────────────────────────────────────
+  const addFaculty=useCallback(async(rec)=>{
+    try{
+      const res=await sbPost('faculty',[rec]);
+      if(res&&res[0])setFaculty(prev=>[...prev,res[0]].sort((a,b)=>a.name.localeCompare(b.name)));
+      // If GFR eligible, also add to gfr_roster
+      if(rec.is_gfr_eligible){
+        const existing=gfrData.find(r=>r.name.toLowerCase()===rec.name.toLowerCase());
+        if(!existing) await addGFR({name:rec.name,college:rec.college_code||'',title:rec.title||'',department:rec.department||'',notes:'',status:'Free'});
+      }
+      notify('Added '+rec.name);
+    }catch(e){notify('Add failed: '+e.message,'error');}
+  },[gfrData,addGFR]);
+
+  const updateFaculty=useCallback(async(id,patch)=>{
+    try{
+      const old=faculty.find(f=>f.id===id);
+      await sbPatch('faculty',id,patch);
+      setFaculty(prev=>prev.map(f=>f.id===id?{...f,...patch}:f));
+      // If toggling is_gfr_eligible ON, add to gfr_roster if not there
+      if(patch.is_gfr_eligible&&(!old||!old.is_gfr_eligible)){
+        const existing=gfrData.find(r=>r.name.toLowerCase()===(patch.name||old.name).toLowerCase());
+        if(!existing) await addGFR({name:patch.name||old.name,college:patch.college_code||old.college_code||'',title:patch.title||old.title||'',department:patch.department||old.department||'',notes:'',status:'Free'});
+      }
+      notify('Faculty updated');
+    }catch(e){notify('Update failed: '+e.message,'error');}
+  },[faculty,gfrData,addGFR]);
+
+  const deleteFaculty=useCallback((id,name)=>{
+    const fac=faculty.find(f=>f.id===id);
+    setDeleteDlg({message:'Delete faculty member '+name+'?',entityType:'faculty',entityName:name,entityData:fac||{},
+      onConfirm:async(notes)=>{
+        try{
+          await sbPost('deletion_log',[{entity_type:'faculty',entity_name:name,entity_data:fac||{},notes:notes||''}]);
+          await sbDelete('faculty',id);
+          setFaculty(prev=>prev.filter(f=>f.id!==id));
+          setDeletionLog(prev=>[{entity_type:'faculty',entity_name:name,entity_data:fac||{},notes:notes||'',deleted_at:new Date().toISOString()},...prev]);
+          notify('Deleted '+name);
+          setDeleteDlg(null);
+        }catch(e){notify('Delete failed: '+e.message,'error');setDeleteDlg(null);}
+      }
+    });
+  },[faculty]);
+
+  // ── Restore from deletion log ──────────────────────────────────────────────
+  const restoreEntry=useCallback(async(logEntry)=>{
+    try{
+      const d=logEntry.entity_data||{};
+      const {id:_,created_at:__,...cleanData}=d;
+      if(logEntry.entity_type==='student'&&cleanData.last_name){
+        await sbPost('students',[cleanData]);
+      } else if(logEntry.entity_type==='gfr'&&cleanData.name){
+        await sbPost('gfr_roster',[{name:cleanData.name,college:cleanData.college||'',title:cleanData.title||'',department:cleanData.department||'',notes:(cleanData.notes||'')+'\nRestored on '+new Date().toLocaleDateString(),status:'Free',current_student:'',current_student_college:'',grad_expected:'',grad_dt:null,program:''}]);
+      } else if(logEntry.entity_type==='faculty'&&cleanData.name){
+        await sbPost('faculty',[cleanData]);
+      }
+      // Mark as restored
+      if(logEntry.id) await sbPatch('deletion_log',logEntry.id,{restored_at:new Date().toISOString()});
+      setDeletionLog(prev=>prev.map(l=>l.id===logEntry.id?{...l,restored_at:new Date().toISOString()}:l));
+      notify('Restored '+logEntry.entity_name);
+      await loadData();
+    }catch(e){notify('Restore failed: '+e.message,'error');}
+  },[loadData]);
+
   const handleBackup=async(fromModal=false)=>{
     setBackingUp(true);
     await backupToSharePoint(gfrWithPending,requests,students,notify);
@@ -668,16 +681,39 @@ function App(){
     if(fromModal)setShowBackupModal(false);
   };
 
-  const stats=useMemo(()=>({
-    total:gfrData.length,
-    free:gfrData.filter(r=>r.liveStatus==='Free').length,
-    active:gfrData.filter(r=>r.liveStatus==='Active').length,
-    pending:requests.filter(r=>r.status==='pending').length,
-    students:students.length,
-    needsGFR:students.filter(s=>!s.gfr).length,
-  }),[gfrData,requests,students]);
+  const stats=useMemo(()=>{
+    // Build quick set of GFR names that have active students (non-pending)
+    const activeGfrNames=new Set();
+    (students||[]).forEach(s=>{
+      if(s&&typeof s.gfr==='string'&&s.gfr.trim()&&!s.gfr.toLowerCase().includes('(pending)')){
+        activeGfrNames.add(normalizeGfrName(s.gfr).toLowerCase());
+      }
+    });
+    // Count GFRs whose derived status is Active (has a student) vs Free
+    let active=0,free=0;
+    gfrData.forEach(r=>{
+      const base=r.liveStatus;// from grad_dt auto-expiry
+      if(activeGfrNames.has(r.name.toLowerCase())||activeGfrNames.has(gfrNameKey(r.name))){
+        active++;
+      } else if(base==='Active'&&r.current_student){
+        // Stale — roster says Active but no student refs them, count as Free
+        free++;
+      } else if(base==='Free'){
+        free++;
+      }
+      // Declined stays as-is, not counted in free/active
+    });
+    return{
+      total:gfrData.length,
+      free,
+      active,
+      pending:requests.filter(r=>r.status==='pending').length,
+      students:students.length,
+      needsGFR:students.filter(s=>!s.gfr||s.gfr.trim()==='').length,
+    };
+  },[gfrData,requests,students]);
 
-  const backupDue=typeof shouldAutoBackup==="function"?shouldAutoBackup():false;
+  const backupDue=shouldAutoBackup();
   const lastBackup=localStorage.getItem(LAST_BACKUP_KEY);
   const gfrEmpty=gfrData.length===0;
   const studentsEmpty=students.length===0;
@@ -689,16 +725,17 @@ function App(){
   return(
     <div style={{fontFamily:"'DM Sans','Helvetica Neue',sans-serif",background:'#f5f4f0',minHeight:'100vh'}}>
       {/* Header */}
-      <div style={{background:'#1a1a2e',height:56,display:'flex',alignItems:'center',padding:'0 24px',gap:12,boxShadow:'0 2px 12px rgba(0,0,0,0.3)'}}>
+      <div style={{background:'#1a1a2e',height:56,display:'flex',alignItems:'center',padding:'0 24px',gap:12,boxShadow:'0 2px 12px rgba(0,0,0,0.3)',position:'sticky',top:0,zIndex:100}}>
         <div style={{width:7,height:7,borderRadius:'50%',background:'#10b981',flexShrink:0}}/>
         <span style={{color:'#fff',fontWeight:600,fontSize:14,letterSpacing:'0.03em',flexShrink:0}}>GradEd</span>
         <span style={{color:'#475569',fontSize:11,flexShrink:0}}>Doctoral Students · TAMUCC</span>
         <div style={{display:'flex',gap:2,marginLeft:'auto',flexWrap:'nowrap'}}>
-          {[['committee','📋 Students'],['faculty','🎓 GFR Faculty'],['tracking','🔄 Requests'],['settings','⚙️ Settings']].map(([v,label])=>(
+          {[['committee','📋 Students'],['faculty','🎓 GFR Faculty'],['tracking','🔄 Requests'],['settings','⚙️ Settings'],['trash','🗑 Trash']].map(([v,label])=>(
             <button key={v} onClick={()=>setView(v)} className="btn"
               style={{background:view===v?'#10b981':'transparent',color:view===v?'#fff':'#94a3b8',padding:'5px 12px',fontSize:12}}>
               {label}
               {v==='tracking'&&stats.pending>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:10,padding:'1px 5px',fontSize:10,marginLeft:4}}>{stats.pending}</span>}
+              {v==='trash'&&deletionLog.filter(l=>!l.restored_at).length>0&&<span style={{background:'#6b7280',color:'#fff',borderRadius:10,padding:'1px 5px',fontSize:10,marginLeft:4}}>{deletionLog.filter(l=>!l.restored_at).length}</span>}
             </button>
           ))}
         </div>
@@ -710,52 +747,58 @@ function App(){
 
       {/* Modals */}
       {confirmDlg&&<ConfirmDialog message={confirmDlg.msg} onConfirm={confirmDlg.cb} onCancel={()=>setConfirmDlg(null)}/>}
+      {deleteDlg&&<DeleteWithNotesDialog message={deleteDlg.message} entityType={deleteDlg.entityType} entityName={deleteDlg.entityName} entityData={deleteDlg.entityData} onConfirm={deleteDlg.onConfirm} onCancel={()=>setDeleteDlg(null)}/>}
       {showBackupModal&&<BackupModal lastBackup={lastBackup} onBackup={()=>handleBackup(true)} onDismiss={()=>setShowBackupModal(false)} backing={backingUp}/>}
       {seeding&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{background:'#fff',borderRadius:12,padding:32,textAlign:'center',maxWidth:360}}><div style={{width:40,height:40,border:'3px solid #e5e7eb',borderTop:'3px solid #059669',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 16px'}}/><div style={{fontWeight:600,marginBottom:8}}>Loading data into Supabase</div><div style={{fontSize:13,color:'#6b7280'}}>{seedProg}</div></div></div>}
       {nextPopup&&nextPopup.candidates[nextPopup.currentIdx]&&<NextCandidatePopup candidate={nextPopup.candidates[nextPopup.currentIdx]} studentInfo={nextPopup.studentInfo} totalCandidates={nextPopup.candidates.length} currentIdx={nextPopup.currentIdx} onSend={handleNextSend} onSkip={handleNextSkip} onClose={()=>setNextPopup(null)}/>}
       {showAdd&&<AddGFRModal programs={programs} departments={departments} onClose={()=>setShowAdd(false)} onSave={async r=>{await addGFR(r);setShowAdd(false);}}/>}
 
-      <div style={{maxWidth:1500,margin:'0 auto',padding:'20px 24px'}}>
-        {/* Stats — view-specific */}
+      <div style={{maxWidth:1500,margin:'0 auto',padding:'0 24px 20px'}}>
+        {/* Action buttons (faculty view) */}
         {view==='faculty'&&(
-          <div style={{display:'flex',gap:8,marginBottom:backupDue?8:12,flexWrap:'wrap',alignItems:'center',justifyContent:'flex-end'}}>
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end',flexWrap:'wrap',alignItems:'center',paddingTop:20,marginBottom:4}}>
             {gfrEmpty&&<button className="btn btn-p" onClick={()=>seedTable('gfr')} style={{whiteSpace:'nowrap',fontSize:12}}>⬆ Load GFR Data</button>}
             <button className="btn btn-g" onClick={()=>setShowAdd(true)}>+ Add GFR</button>
-            <button className="btn btn-o" onClick={()=>typeof exportCSV==="function"&&exportCSV(gfrWithPending,requests,students)}>⬇ Export</button>
+            <button className="btn btn-o" onClick={()=>exportCSV(gfrWithPending,requests,students)}>⬇ Export</button>
             <button className="btn" onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} disabled={backingUp} title={lastBackup?'Last: '+new Date(lastBackup).toLocaleDateString():'Never backed up'} style={{background:backupDue?'#d97706':'#374151',color:'#fff',opacity:backingUp?0.7:1,animation:backupDue?'pulse 2s infinite':'none',whiteSpace:'nowrap'}}>
               {backingUp?'⏳…':backupDue?'🔔 Backup Due':'☁ Backup'}
             </button>
           </div>
         )}
-        {view==='faculty'&&<FacultyView gfrData={gfrWithPending} updateGFR={updateGFR} deleteGFR={deleteGFR} departments={departments} programs={programs} notify={notify}/>}
 
+        {/* Action buttons (committee view) */}
         {view==='committee'&&(
-          <div style={{display:'flex',gap:8,marginBottom:backupDue?8:12,flexWrap:'wrap',alignItems:'center',justifyContent:'flex-end'}}>
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end',flexWrap:'wrap',alignItems:'center',paddingTop:20,marginBottom:4}}>
             {studentsEmpty&&<button className="btn btn-p" onClick={()=>seedTable('students')} style={{whiteSpace:'nowrap',fontSize:12}}>⬆ Load Students</button>}
-            <button className="btn btn-o" onClick={()=>typeof exportStudentsCSV==="function"&&exportStudentsCSV(students)}>⬇ Export Students</button>
-            <button className="btn btn-o" style={{color:backupDue?'#d97706':'#374151',borderColor:backupDue?'#d97706':'#d1d5db',animation:backupDue?'pulse 2s infinite':'none'}} onClick={()=>backupDue?setShowBackupModal(true):handleBackup()}>
+            <button className="btn btn-o" style={{whiteSpace:'nowrap'}} onClick={()=>exportStudentsCSV(students)} title="Downloads full student CSV with all fields">⬇ Export Students</button>
+            <button className="btn btn-o" style={{whiteSpace:'nowrap',color:backupDue?'#d97706':'#374151',borderColor:backupDue?'#d97706':'#d1d5db',animation:backupDue?'pulse 2s infinite':'none'}} onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} title={lastBackup?'Last backup: '+new Date(lastBackup).toLocaleDateString():'Never backed up'}>
               {backupDue?'🔔 Backup Due':'☁ Backup All Data'}
             </button>
           </div>
         )}
 
+        {/* Tracking view still uses global stats (no filters) */}
         {view==='tracking'&&(
-          <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
-            {[['Pending',stats.pending,stats.pending>0?'#fef3c7':'#f9fafb',stats.pending>0?'#92400e':'#6b7280','#d97706'],['Total Requests',requests.length,'#f9fafb','#374151','#9ca3af'],['Accepted',requests.filter(r=>r.status==='accepted').length,'#d1fae5','#065f46','#059669'],['Declined/No Reply',requests.filter(r=>r.status==='declined'||r.status==='no_response').length,'#fee2e2','#991b1b','#ef4444']].map(([label,val,bg,fg,accent])=>(
-              <div key={label} style={{background:bg,color:fg,borderRadius:10,padding:'10px 16px',flex:1,minWidth:80,borderLeft:'3px solid '+accent}}>
-                <div style={{fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-                <div style={{fontSize:11,opacity:0.75,marginTop:1}}>{label}</div>
-              </div>
-            ))}
-            <button className="btn btn-o" onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} title={lastBackup?'Last: '+new Date(lastBackup).toLocaleDateString():'Never'} style={{whiteSpace:'nowrap',animation:backupDue?'pulse 2s infinite':'none',color:backupDue?'#d97706':'#374151',borderColor:backupDue?'#d97706':'#d1d5db'}}>
-              {backupDue?'🔔 Backup Due':'☁ Backup'}
-            </button>
+          <div style={{position:'sticky',top:56,zIndex:80,background:'#f5f4f0',paddingTop:20,paddingBottom:8}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+              {[['Pending',stats.pending,stats.pending>0?'#fef3c7':'#f9fafb',stats.pending>0?'#92400e':'#6b7280','#d97706'],['Total Requests',requests.length,'#f9fafb','#374151','#9ca3af'],['Accepted',requests.filter(r=>r.status==='accepted').length,'#d1fae5','#065f46','#059669'],['Declined/No Reply',requests.filter(r=>r.status==='declined'||r.status==='no_response').length,'#fee2e2','#991b1b','#ef4444']].map(([label,val,bg,fg,accent])=>(
+                <div key={label} style={{background:bg,color:fg,borderRadius:10,padding:'10px 16px',flex:1,minWidth:80,borderLeft:'3px solid '+accent}}>
+                  <div style={{fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+                  <div style={{fontSize:11,opacity:0.75,marginTop:1}}>{label}</div>
+                </div>
+              ))}
+              <button className="btn btn-o" onClick={()=>backupDue?setShowBackupModal(true):handleBackup()} title={lastBackup?'Last: '+new Date(lastBackup).toLocaleDateString():'Never'} style={{whiteSpace:'nowrap',animation:backupDue?'pulse 2s infinite':'none',color:backupDue?'#d97706':'#374151',borderColor:backupDue?'#d97706':'#d1d5db'}}>
+                {backupDue?'🔔 Backup Due':'☁ Backup'}
+              </button>
+            </div>
           </div>
         )}
-        {view==='tracking'&&<TrackingView requests={requests} gfrData={gfrWithPending} handleAccept={handleAccept} handleDecline={handleDecline} notify={notify}/>}
 
-        {view==='committee' &&<CommitteeView students={students} programs={programs} updateStudent={updateStudent} addStudent={addStudent} deleteStudent={deleteStudent} gfrData={gfrWithPending} addRequest={addRequest} requests={requests} notify={notify}/>}
-        {view==='settings'  &&<SettingsView  programs={programs} departments={departments} advisors={advisors} updateProgram={updateProgram} updateDepartment={updateDepartment} updateAdvisor={updateAdvisor} notify={notify}/>}
+        {view==='faculty'&&<FacultyView gfrData={gfrWithPending} students={students} updateGFR={updateGFR} deleteGFR={deleteGFR} departments={departments} programs={programs} notify={notify} facultyNames={facultyNames}/>}
+
+        {view==='committee' &&<CommitteeView students={students} programs={programs} updateStudent={updateStudent} addStudent={addStudent} deleteStudent={deleteStudent} gfrData={gfrWithPending} addRequest={addRequest} requests={requests} notify={notify} facultyNames={facultyNames}/>}
+        {view==='settings'  &&<SettingsView  programs={programs} departments={departments} advisors={advisors} faculty={faculty} updateProgram={updateProgram} updateDepartment={updateDepartment} updateAdvisor={updateAdvisor} addFaculty={addFaculty} updateFaculty={updateFaculty} deleteFaculty={deleteFaculty} seedTable={seedTable} notify={notify}/>}
+        {view==='trash'     &&<TrashView deletionLog={deletionLog} restoreEntry={restoreEntry} notify={notify}/>}
       </div>
     </div>
   );
@@ -798,50 +841,117 @@ function AddGFRModal({programs,departments,onClose,onSave}){
 }
 
 // ── Faculty List ──────────────────────────────────────────────────────────────
-function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
+function FacultyView({gfrData,students,updateGFR,deleteGFR,departments,programs,notify,facultyNames}){
   const [search,setSearch]=useState('');
   const [fStatus,setFStatus]=useState('All');
   const [fCollege,setFCollege]=useState('All');
   const [sort,setSort]=useState('name');
   const [expanded,setExpanded]=useState(null);
   const colleges=['All',...Object.keys(COLLEGE_MAP)];
-  const filtered=useMemo(()=>gfrData.filter(r=>{
+
+  // Build live assignment map: GFR roster name → student(s) from the students table
+  const liveAssignments=useMemo(()=>{
+    const map={};// gfr roster name (lowercase) → {student, program, college, grad}
+    const rosterMap={};
+    gfrData.forEach(r=>{rosterMap[r.name.toLowerCase()]=r.name;});
+    (students||[]).forEach(s=>{
+      if(!s||!s.gfr||typeof s.gfr!=='string'||!s.gfr.trim())return;
+      // Strip "(pending)" suffix for matching
+      const raw=s.gfr.replace(/\s*\(pending\)\s*$/i,'').trim();
+      if(!raw)return;
+      const canonical=normalizeGfrName(raw);
+      // Try exact match first
+      let rosterName=rosterMap[canonical.toLowerCase()];
+      // Try key-based fuzzy match
+      if(!rosterName){
+        const key=gfrNameKey(canonical);
+        Object.keys(rosterMap).forEach(k=>{
+          if(gfrNameKey(k)===key)rosterName=rosterMap[k];
+        });
+      }
+      // Try last-name fallback
+      if(!rosterName){
+        const last=canonical.split(' ').pop().toLowerCase();
+        const matches=Object.keys(rosterMap).filter(k=>k.split(' ').pop()===last);
+        if(matches.length===1)rosterName=rosterMap[matches[0]];
+      }
+      if(rosterName){
+        const lk=rosterName.toLowerCase();
+        if(!map[lk])map[lk]=[];
+        map[lk].push({studentName:s.full_name||s.last_name+', '+s.first_name,college:s.college_code,program:s.program_name||s.major,grad:s.anticipated_grad||'',isPending:s.gfr.toLowerCase().includes('(pending)')});
+      }
+    });
+    return map;
+  },[gfrData,students]);
+
+  // Enrich GFR data with live assignment info
+  const enriched=useMemo(()=>gfrData.map(r=>{
+    const assigns=liveAssignments[r.name.toLowerCase()]||[];
+    const activeAssign=assigns.find(a=>!a.isPending);
+    const pendingAssign=assigns.find(a=>a.isPending);
+    // Derive status from students table: if a student has this GFR (non-pending), they're Active
+    let derivedStatus=r.liveStatus;
+    let derivedStudent=r.displayStudent;
+    let derivedGrad=r.displayGrad;
+    let derivedProgram=r.displayProgram;
+    let derivedStudentCollege=r.displayStudentCollege;
+    if(activeAssign){
+      derivedStatus='Active';
+      derivedStudent=activeAssign.studentName;
+      derivedGrad=activeAssign.grad;
+      derivedProgram=activeAssign.program;
+      derivedStudentCollege=activeAssign.college;
+    } else if(!activeAssign&&r.liveStatus==='Active'&&r.current_student){
+      // GFR roster says Active but no student references them — stale data, show as Free
+      derivedStatus='Free';
+      derivedStudent='';
+      derivedGrad='';
+      derivedProgram='';
+      derivedStudentCollege='';
+    }
+    return{...r,derivedStatus,derivedStudent,derivedGrad,derivedProgram,derivedStudentCollege,liveAssigns:assigns};
+  }),[gfrData,liveAssignments]);
+
+  const filtered=useMemo(()=>enriched.filter(r=>{
     if(fStatus==='Pending'&&!r.hasPendingRequest)return false;
-    if(fStatus!=='All'&&fStatus!=='Pending'&&r.liveStatus!==fStatus)return false;
+    if(fStatus!=='All'&&fStatus!=='Pending'&&r.derivedStatus!==fStatus)return false;
     if(fCollege!=='All'&&r.college!==fCollege)return false;
-    if(search){const q=search.toLowerCase();return r.name.toLowerCase().includes(q)||(r.department||'').toLowerCase().includes(q)||(r.college||'').toLowerCase().includes(q)||(r.notes||'').toLowerCase().includes(q);}
+    if(search){const q=search.toLowerCase();return r.name.toLowerCase().includes(q)||(r.department||'').toLowerCase().includes(q)||(r.college||'').toLowerCase().includes(q)||(r.notes||'').toLowerCase().includes(q)||(r.derivedStudent||'').toLowerCase().includes(q);}
     return true;
-  }).sort((a,b)=>{if(sort==='name')return a.name.localeCompare(b.name);if(sort==='college')return(a.college||'').localeCompare(b.college||'');if(sort==='status')return a.liveStatus.localeCompare(b.liveStatus);return 0;}),[gfrData,search,fStatus,fCollege,sort]);
+  }).sort((a,b)=>{if(sort==='name')return a.name.localeCompare(b.name);if(sort==='college')return(a.college||'').localeCompare(b.college||'');if(sort==='status')return a.derivedStatus.localeCompare(b.derivedStatus);return 0;}),[enriched,search,fStatus,fCollege,sort]);
+
+  // Live filtered stats (reflect current filters)
+  const liveStats=useMemo(()=>({
+    total:filtered.length,
+    free:filtered.filter(r=>r.derivedStatus==='Free').length,
+    active:filtered.filter(r=>r.derivedStatus==='Active').length,
+    pending:filtered.filter(r=>r.hasPendingRequest).length,
+  }),[filtered]);
 
   return(<div>
-    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, dept, college, notes…" className="fi" style={{flex:1,minWidth:200}}/>
-      <select value={fStatus} onChange={e=>setFStatus(e.target.value)} className="fi" style={{width:'auto'}}>
-        {['All','Free','Active','Declined','Pending'].map(s=><option key={s}>{s}</option>)}
-      </select>
-      <select value={fCollege} onChange={e=>setFCollege(e.target.value)} className="fi" style={{width:'auto'}}>
-        {colleges.map(c=><option key={c}>{c}</option>)}
-      </select>
-      <select value={sort} onChange={e=>setSort(e.target.value)} className="fi" style={{width:'auto'}}>
-        <option value="name">Sort: Name</option><option value="college">Sort: College</option><option value="status">Sort: Status</option>
-      </select>
-      <span style={{color:'#9ca3af',fontSize:12,whiteSpace:'nowrap'}}>{filtered.length} of {gfrData.length}</span>
-    </div>
-
-    {/* Live stats — update with current filters */}
-    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
-      {[
-        ['Showing',filtered.length,'#f3f4f6','#374151','#d1d5db'],
-        ['Free',filtered.filter(r=>r.liveStatus==='Free').length,'#d1fae5','#065f46','#059669'],
-        ['Active',filtered.filter(r=>r.liveStatus==='Active').length,'#fef3c7','#92400e','#d97706'],
-        ['Declined',filtered.filter(r=>r.liveStatus==='Declined').length,'#f3f4f6','#6b7280','#9ca3af'],
-        ['Pending',filtered.filter(r=>r.hasPendingRequest).length,'#dbeafe','#1e3a8a','#2563eb'],
-      ].map(([label,val,bg,fg,accent])=>(
-        <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
-          <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-          <div style={{fontSize:10,opacity:0.8,marginTop:1}}>{label}</div>
-        </div>
-      ))}
+    {/* Stats + Filter row — sticky together below page header */}
+    <div style={{position:'sticky',top:56,zIndex:80,background:'#f5f4f0',paddingTop:20,paddingBottom:12,marginBottom:4}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
+        {[['Showing',liveStats.total,'#1a1a2e','#fff','#fff'],['Free',liveStats.free,'#d1fae5','#065f46','#059669'],['Active',liveStats.active,'#fef3c7','#92400e','#d97706'],['Pending Req.',liveStats.pending,liveStats.pending>0?'#dbeafe':'#f9fafb',liveStats.pending>0?'#1e3a8a':'#6b7280','#2563eb']].map(([label,val,bg,fg,accent])=>(
+          <div key={label} style={{background:bg,color:fg,borderRadius:10,padding:'10px 16px',flex:1,minWidth:80,borderLeft:'3px solid '+accent}}>
+            <div style={{fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+            <div style={{fontSize:11,opacity:0.75,marginTop:1}}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, dept, college, notes…" className="fi" style={{flex:1,minWidth:200}}/>
+        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} className="fi" style={{width:'auto'}}>
+          {['All','Free','Active','Declined','Pending'].map(s=><option key={s}>{s}</option>)}
+        </select>
+        <select value={fCollege} onChange={e=>setFCollege(e.target.value)} className="fi" style={{width:'auto'}}>
+          {colleges.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <select value={sort} onChange={e=>setSort(e.target.value)} className="fi" style={{width:'auto'}}>
+          <option value="name">Sort: Name</option><option value="college">Sort: College</option><option value="status">Sort: Status</option>
+        </select>
+        <span style={{color:'#9ca3af',fontSize:12,whiteSpace:'nowrap'}}>{filtered.length} of {gfrData.length}</span>
+      </div>
     </div>
     <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
@@ -852,7 +962,7 @@ function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
         </tr></thead>
         <tbody>
           {filtered.map((row,i)=>{
-            const sc=STATUS_CFG[row.liveStatus]||STATUS_CFG.Free;
+            const sc=STATUS_CFG[row.derivedStatus]||STATUS_CFG.Free;
             const isExp=expanded===row.id;
             return[
               <tr key={row.id} className="rh" onClick={()=>setExpanded(isExp?null:row.id)} style={{borderBottom:'1px solid #f3f4f6',cursor:'pointer',background:i%2===0?'#fff':'#fafafa'}}>
@@ -868,8 +978,8 @@ function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
                   {row.hasPendingRequest&&<span className="badge" style={{background:PENDING_CFG.bg,color:PENDING_CFG.color,display:'block',marginTop:4}}>✉ Pending</span>}
                 </td>
                 <td style={{padding:'9px 13px',fontSize:13}}>
-                  {row.liveStatus==='Active'&&row.displayStudent
-                    ?<div><div style={{fontWeight:500}}>{row.displayStudent}</div>{row.displayGrad&&<div style={{color:'#d97706',fontSize:12}}>Grad: {row.displayGrad}</div>}{row.displayProgram&&<div style={{color:'#9ca3af',fontSize:12}}>{row.displayProgram}</div>}</div>
+                  {row.derivedStatus==='Active'&&row.derivedStudent
+                    ?<div><div style={{fontWeight:500}}>{row.derivedStudent}</div>{row.derivedGrad&&<div style={{color:'#d97706',fontSize:12}}>Grad: {row.derivedGrad}</div>}{row.derivedProgram&&<div style={{color:'#9ca3af',fontSize:12}}>{row.derivedProgram}</div>}</div>
                     :<span style={{color:'#d1d5db'}}>—</span>}
                 </td>
                 <td style={{padding:'9px 13px',color:'#9ca3af',fontSize:12,maxWidth:160}}>
@@ -878,7 +988,7 @@ function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
                 <td style={{padding:'9px 13px',color:'#9ca3af'}}>{isExp?'▲':'▼'}</td>
               </tr>,
               isExp&&(<tr key={row.id+'_e'} style={{borderBottom:'1px solid #e5e7eb'}}><td colSpan={8} style={{padding:'16px 20px',background:'#f8f7f4'}}>
-                <GFRDetail row={row} updateGFR={updateGFR} deleteGFR={deleteGFR} departments={departments} notify={notify} onClose={()=>setExpanded(null)}/>
+                <GFRDetail row={row} updateGFR={updateGFR} deleteGFR={deleteGFR} departments={departments} notify={notify} onClose={()=>setExpanded(null)} facultyNames={facultyNames}/>
               </td></tr>)
             ];
           })}
@@ -890,26 +1000,26 @@ function FacultyView({gfrData,updateGFR,deleteGFR,departments,programs,notify}){
 }
 
 // ── GFR Detail ────────────────────────────────────────────────────────────────
-function GFRDetail({row,updateGFR,deleteGFR,departments,notify,onClose}){
+function GFRDetail({row,updateGFR,deleteGFR,departments,notify,onClose,facultyNames}){
   const [editing,setEditing]=useState(false);
   const [saving,setSaving]=useState(false);
-  const [form,setForm]=useState({name:row.name,college:row.college,title:row.title,department:row.department,status:row.liveStatus,notes:row.notes||'',current_student:row.current_student||'',grad_expected:row.grad_expected||'',program:row.program||'',current_student_college:row.current_student_college||''});
+  const [form,setForm]=useState({name:row.name,college:row.college,title:row.title,department:row.department,status:row.derivedStatus,notes:row.notes||'',current_student:row.current_student||'',grad_expected:row.grad_expected||'',program:row.program||'',current_student_college:row.current_student_college||''});
   const f=k=>v=>setForm(p=>({...p,[k]:v}));
   const deptOpts=departments.map(d=>({value:d.name,label:d.name}));
   const save=async()=>{setSaving(true);await updateGFR(row.id,form);setEditing(false);setSaving(false);notify('Updated '+row.name);};
   return(<div style={{display:'flex',gap:24}}>
     <div style={{flex:1}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:12}}>
-        {[['Name',row.name],['College',row.college+' — '+(COLLEGE_MAP[row.college]||'')],['Department',row.department],['Title',row.title],['Status',row.liveStatus]].map(([k,v])=>(
+        {[['Name',row.name],['College',row.college+' — '+(COLLEGE_MAP[row.college]||'')],['Department',row.department],['Title',row.title],['Status',row.derivedStatus]].map(([k,v])=>(
           <div key={k}><div style={{fontSize:10,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{k}</div><div style={{fontSize:14}}>{v||'—'}</div></div>
         ))}
       </div>
       {row.hasPendingRequest&&<div style={{background:'#dbeafe',border:'1px solid #93c5fd',borderRadius:8,padding:'8px 14px',marginBottom:10,fontSize:12,color:'#1e3a8a'}}>✉️ <strong>Pending request</strong> — waiting for response. Check Requests tab.</div>}
-      {row.liveStatus==='Active'&&row.displayStudent&&(
+      {row.derivedStatus==='Active'&&row.derivedStudent&&(
         <div style={{background:'#fef3c7',border:'1px solid #fcd34d',borderRadius:8,padding:'12px 14px',marginBottom:10}}>
-          <div className="section-hdr" style={{margin:'0 0 8px'}}>Current Assignment</div>
+          <div className="section-hdr" style={{margin:'0 0 8px'}}>Current Assignment <span style={{fontSize:10,color:'#059669',fontWeight:400,textTransform:'none',letterSpacing:0}}>(live from Students table)</span></div>
           <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
-            {[['Student',row.displayStudent],['Grad Expected',row.displayGrad||'TBD'],['Program',row.displayProgram],['College',row.displayStudentCollege||row.current_student_college]].filter(([,v])=>v).map(([k,v])=>(
+            {[['Student',row.derivedStudent],['Grad Expected',row.derivedGrad||'TBD'],['Program',row.derivedProgram],['College',row.derivedStudentCollege||row.current_student_college]].filter(([,v])=>v).map(([k,v])=>(
               <div key={k}><div style={{fontSize:10,color:'#92400e',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{k}</div><div style={{fontSize:13,fontWeight:500,color:'#78350f'}}>{v}</div></div>
             ))}
           </div>
@@ -1341,7 +1451,7 @@ function GFRRequestModal({student,gfrData,requests,addRequest,updateStudent,noti
 
 
 // ── Committee Details Tab ─────────────────────────────────────────────────────
-function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent,gfrData,addRequest,requests,notify}){
+function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent,gfrData,addRequest,requests,notify,facultyNames}){
   const [search,setSearch]=useState('');
   const [fProg,setFProg]=useState('All');
   const [fCollege,setFCollege]=useState('All');
@@ -1365,39 +1475,47 @@ function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent
     return true;
   }).sort((a,b)=>a.last_name.localeCompare(b.last_name)),[students,search,fProg,fCollege,fGrad]);
 
+  // Live filtered stats
+  const liveStats=useMemo(()=>{
+    const pendingReqIds=new Set(requests.filter(r=>r.status==='pending').map(r=>r.student_name));
+    const hasGfr=filtered.filter(s=>s.gfr&&s.gfr.trim()&&!s.gfr.toLowerCase().includes('(pending)')).length;
+    return{
+      total:filtered.length,
+      needsGFR:filtered.filter(s=>!s.gfr||!s.gfr.trim()).length,
+      hasGFR:hasGfr,
+      pending:filtered.filter(s=>pendingReqIds.has(s.full_name)).length,
+    };
+  },[filtered,requests]);
+
   return(<div>
-    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search first name, last name, chair, GFR, program…" className="fi" style={{flex:1,minWidth:200}}/>
-      <select value={fProg} onChange={e=>setFProg(e.target.value)} className="fi" style={{width:'auto'}}>
-        {progOpts.map(p=><option key={p}>{p}</option>)}
-      </select>
-      <select value={fCollege} onChange={e=>setFCollege(e.target.value)} className="fi" style={{width:'auto'}}>
-        {colleges.map(c=><option key={c}>{c}</option>)}
-      </select>
-      <select value={fGrad} onChange={e=>setFGrad(e.target.value)} className="fi" style={{width:'auto'}}>
-        <option value="All">All Students</option>
-        <option value="Active">Active Only</option>
-        <option value="Graduated">Graduated</option>
-      </select>
-      <span style={{color:'#9ca3af',fontSize:12,whiteSpace:'nowrap'}}>{filtered.length} of {students.length}</span>
-      <button className="btn btn-g btn-sm" onClick={()=>setShowAddModal(true)}>+ Add Student</button>
+    {/* Stats + Filter row — sticky together below page header */}
+    <div style={{position:'sticky',top:56,zIndex:80,background:'#f5f4f0',paddingTop:20,paddingBottom:12,marginBottom:4}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
+        {[['Showing',liveStats.total,'#1a1a2e','#fff','#fff'],['Needs GFR',liveStats.needsGFR,liveStats.needsGFR>0?'#fee2e2':'#f9fafb',liveStats.needsGFR>0?'#991b1b':'#6b7280','#ef4444'],['Has GFR',liveStats.hasGFR,'#d1fae5','#065f46','#059669'],['Pending Requests',liveStats.pending,liveStats.pending>0?'#dbeafe':'#f9fafb',liveStats.pending>0?'#1e3a8a':'#6b7280','#2563eb']].map(([label,val,bg,fg,accent])=>(
+          <div key={label} style={{background:bg,color:fg,borderRadius:10,padding:'10px 16px',flex:1,minWidth:80,borderLeft:'3px solid '+accent}}>
+            <div style={{fontSize:20,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+            <div style={{fontSize:11,opacity:0.75,marginTop:1}}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search first name, last name, chair, GFR, program…" className="fi" style={{flex:1,minWidth:200}}/>
+        <select value={fProg} onChange={e=>setFProg(e.target.value)} className="fi" style={{width:'auto'}}>
+          {progOpts.map(p=><option key={p}>{p}</option>)}
+        </select>
+        <select value={fCollege} onChange={e=>setFCollege(e.target.value)} className="fi" style={{width:'auto'}}>
+          {colleges.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <select value={fGrad} onChange={e=>setFGrad(e.target.value)} className="fi" style={{width:'auto'}}>
+          <option value="All">All Students</option>
+          <option value="Active">Active Only</option>
+          <option value="Graduated">Graduated</option>
+        </select>
+        <span style={{color:'#9ca3af',fontSize:12,whiteSpace:'nowrap'}}>{filtered.length} of {students.length}</span>
+        <button className="btn btn-g btn-sm" onClick={()=>setShowAddModal(true)}>+ Add Student</button>
+      </div>
     </div>
 
-    {/* Live stats — update with current filters */}
-    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
-      {[
-        ['Showing',filtered.length,'#f3f4f6','#374151','#d1d5db'],
-        ['Needs GFR',filtered.filter(s=>!s.gfr||s.gfr==='').length,'#fee2e2','#991b1b','#ef4444'],
-        ['GFR Assigned',filtered.filter(s=>s.gfr&&!s.gfr.includes('pending')).length,'#d1fae5','#065f46','#059669'],
-        ['Pending Response',filtered.filter(s=>s.gfr&&s.gfr.includes('pending')).length,'#dbeafe','#1e3a8a','#2563eb'],
-        ['Defense Scheduled',filtered.filter(s=>!!s.defense_date).length,'#fef3c7','#92400e','#d97706'],
-      ].map(([label,val,bg,fg,accent])=>(
-        <div key={label} style={{background:bg,color:fg,borderRadius:8,padding:'8px 14px',flex:1,minWidth:70,borderLeft:'3px solid '+accent}}>
-          <div style={{fontSize:18,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{val}</div>
-          <div style={{fontSize:10,opacity:0.8,marginTop:1}}>{label}</div>
-        </div>
-      ))}
-    </div>
     <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
         <thead><tr style={{background:'#f8f7f4',borderBottom:'1.5px solid #e5e7eb'}}>
@@ -1426,7 +1544,7 @@ function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent
                 </td>
               </tr>,
               isExp&&(<tr key={s.id+'_e'} style={{borderBottom:'1px solid #e5e7eb'}}><td colSpan={9} style={{padding:'16px 20px',background:'#f8f7f4'}}>
-                <StudentDetail student={s} updateStudent={updateStudent} deleteStudent={deleteStudent} programs={programs} notify={notify} onClose={()=>setExpanded(null)}/>
+                <StudentDetail student={s} updateStudent={updateStudent} deleteStudent={deleteStudent} programs={programs} notify={notify} onClose={()=>setExpanded(null)} facultyNames={facultyNames}/>
               </td></tr>)
             ];
           })}
@@ -1435,7 +1553,7 @@ function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent
       {filtered.length===0&&<div style={{textAlign:'center',padding:40,color:'#9ca3af'}}>No students found</div>}
     </div>
 
-    {showAddModal&&<AddStudentModal programs={programs} onClose={()=>setShowAddModal(false)} onSave={async s=>{await addStudent(s);setShowAddModal(false);}}/>}
+    {showAddModal&&<AddStudentModal programs={programs} onClose={()=>setShowAddModal(false)} onSave={async s=>{await addStudent(s);setShowAddModal(false);}} facultyNames={facultyNames}/>}
     {gfrModal&&<GFRRequestModal
       student={gfrModal.student}
       gfrData={gfrData}
@@ -1449,7 +1567,7 @@ function CommitteeView({students,programs,updateStudent,addStudent,deleteStudent
 }
 
 // ── Student Detail ────────────────────────────────────────────────────────────
-function StudentDetail({student:s,updateStudent,deleteStudent,programs,notify,onClose}){
+function StudentDetail({student:s,updateStudent,deleteStudent,programs,notify,onClose,facultyNames}){
   const [editing,setEditing]=useState(false);
   const [saving,setSaving]=useState(false);
   const [form,setForm]=useState({...s});
@@ -1458,22 +1576,7 @@ function StudentDetail({student:s,updateStudent,deleteStudent,programs,notify,on
     // Auto-fill when program changes
     if(k==='major'){
       const prog=programs.find(p=>p.code===v);
-      if(prog){
-        updated.program_name=prog.name;
-        updated.college_code=prog.college_code;
-        updated.college_name=prog.college_name;
-        updated.department=prog.department;
-        updated.coordinator=prog.coordinator;
-        // Recalculate advisor based on new college + existing last_name
-        const advisor=lookupAdvisor(prog.college_code, updated.last_name||form.last_name||'');
-        if(advisor) updated.academic_advisor=advisor;
-      }
-    }
-    // Recalculate advisor when last_name changes
-    if(k==='last_name'){
-      const collegeCode=updated.college_code||form.college_code||'';
-      const advisor=lookupAdvisor(collegeCode, v||'');
-      if(advisor) updated.academic_advisor=advisor;
+      if(prog){updated.program_name=prog.name;updated.college_code=prog.college_code;updated.college_name=prog.college_name;updated.department=prog.department;updated.coordinator=prog.coordinator;updated.dept_chair='';}
     }
     setForm(updated);
   };
@@ -1530,11 +1633,11 @@ function StudentDetail({student:s,updateStudent,deleteStudent,programs,notify,on
           <div><label className="fl">Academic Advisor (auto)</label><span className="fa">{form.academic_advisor||'—'}</span></div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:12}}>
-          <Field label="Committee Chair" value={form.chair} onChange={f('chair')} placeholder="e.g. Dr. Rosie Banda"/>
-          <Field label="Co-Chair (optional)" value={form.cochair} onChange={f('cochair')} placeholder="e.g. Dr. Jane Smith"/>
-          <Field label="Committee Members (comma-separated)" value={form.committee_members} onChange={f('committee_members')} placeholder="e.g. Dr. Jones, Dr. Garcia"/>
-          <Field label="GFR (Graduate Faculty Rep)" value={form.gfr} onChange={f('gfr')} placeholder="Leave blank to assign later"/>
-          <Field label="External Member" value={form.external_member} onChange={f('external_member')}/>
+          <Field label="Committee Chair" value={form.chair} onChange={f('chair')} placeholder="e.g. Rosie Banda" autoList={facultyNames}/>
+          <Field label="Co-Chair (optional)" value={form.cochair} onChange={f('cochair')} placeholder="e.g. Jane Smith" autoList={facultyNames}/>
+          <Field label="Committee Members" value={form.committee_members} onChange={f('committee_members')} placeholder="Type to search faculty…" autoList={facultyNames} multiMax={3}/>
+          <Field label="GFR (Graduate Faculty Rep)" value={form.gfr} onChange={f('gfr')} placeholder="Leave blank to assign later" autoList={facultyNames}/>
+          <Field label="External Member" value={form.external_member} onChange={f('external_member')} autoList={facultyNames}/>
           <Field label="Anticipated Graduation" value={form.anticipated_grad} onChange={f('anticipated_grad')} placeholder="e.g. Spring 2026"/>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr',gap:12,marginBottom:12}}>
@@ -1587,7 +1690,7 @@ function StudentDetail({student:s,updateStudent,deleteStudent,programs,notify,on
 }
 
 // ── Add Student Modal ─────────────────────────────────────────────────────────
-function AddStudentModal({programs,onClose,onSave}){
+function AddStudentModal({programs,onClose,onSave,facultyNames}){
   const [form,setForm]=useState({first_name:'',last_name:'',student_id:'',email:'',degree:'PHD',major:'',chair:'',cochair:'',committee_members:'',gfr:'',dissertation_title:'',anticipated_grad:'',comments:''});
   const [autoFill,setAutoFill]=useState({college_code:'',college_name:'',department:'',coordinator:'',dept_chair:'',academic_advisor:''});
   const [saving,setSaving]=useState(false);
@@ -1637,10 +1740,10 @@ function AddStudentModal({programs,onClose,onSave}){
           </div>
         </div>}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:4}}>
-          <Field label="Committee Chair" value={form.chair} onChange={f('chair')} placeholder="e.g. Dr. Rosie Banda"/>
-          <Field label="Co-Chair (optional)" value={form.cochair} onChange={f('cochair')} placeholder="e.g. Dr. Jane Smith"/>
-          <Field label="Committee Members (comma-separated)" value={form.committee_members} onChange={f('committee_members')} placeholder="e.g. Dr. Jones, Dr. Garcia"/>
-          <Field label="GFR (Graduate Faculty Rep)" value={form.gfr} onChange={f('gfr')} placeholder="Leave blank to assign later"/>
+          <Field label="Committee Chair" value={form.chair} onChange={f('chair')} placeholder="e.g. Rosie Banda" autoList={facultyNames}/>
+          <Field label="Co-Chair (optional)" value={form.cochair} onChange={f('cochair')} placeholder="e.g. Jane Smith" autoList={facultyNames}/>
+          <Field label="Committee Members" value={form.committee_members} onChange={f('committee_members')} placeholder="Type to search faculty…" autoList={facultyNames} multiMax={3}/>
+          <Field label="GFR (Graduate Faculty Rep)" value={form.gfr} onChange={f('gfr')} placeholder="Leave blank to assign later" autoList={facultyNames}/>
           <Field label="Anticipated Graduation" value={form.anticipated_grad} onChange={f('anticipated_grad')} placeholder="e.g. Spring 2026"/>
         </div>
         <Field label="Dissertation Title" value={form.dissertation_title} onChange={f('dissertation_title')} rows={2} placeholder="Full dissertation or project title"/>
@@ -1656,12 +1759,14 @@ function AddStudentModal({programs,onClose,onSave}){
 }
 
 // ── Settings Tab ──────────────────────────────────────────────────────────────
-function SettingsView({programs,departments,advisors,updateProgram,updateDepartment,updateAdvisor,notify}){
+function SettingsView({programs,departments,advisors,faculty,updateProgram,updateDepartment,updateAdvisor,addFaculty,updateFaculty,deleteFaculty,seedTable,notify}){
   const [section,setSection]=useState('programs');
   const [editingId,setEditingId]=useState(null);
   const [editForm,setEditForm]=useState({});
   const [addForm,setAddForm]=useState({});
   const [showAddRow,setShowAddRow]=useState(false);
+  const [facSearch,setFacSearch]=useState('');
+  const [facCollege,setFacCollege]=useState('All');
   const ef=k=>v=>setEditForm(p=>({...p,[k]:v}));
   const af=k=>v=>setAddForm(p=>({...p,[k]:v}));
 
@@ -1695,7 +1800,7 @@ function SettingsView({programs,departments,advisors,updateProgram,updateDepartm
 
   return(<div>
     <div style={{display:'flex',gap:4,marginBottom:20}}>
-      {[['programs','🎓 Programs & Coordinators'],['departments','🏛 Departments & Chairs'],['advisors','👤 Academic Advisors']].map(([s,label])=>(
+      {[['programs','🎓 Programs & Coordinators'],['departments','🏛 Departments & Chairs'],['advisors','👤 Academic Advisors'],['faculty','👥 Faculty Directory']].map(([s,label])=>(
         <button key={s} onClick={()=>setSection(s)} className="btn" style={{background:section===s?'#1a1a2e':'#fff',color:section===s?'#fff':'#374151',border:'1.5px solid '+(section===s?'#1a1a2e':'#e5e7eb')}}>
           {label}
         </button>
@@ -1821,6 +1926,130 @@ function SettingsView({programs,departments,advisors,updateProgram,updateDepartm
         </tbody>
       </table>
     </div>}
+
+    {section==='faculty'&&<div>
+      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={facSearch} onChange={e=>setFacSearch(e.target.value)} placeholder="Search faculty name, department…" className="fi" style={{flex:1,minWidth:200}}/>
+        <select value={facCollege} onChange={e=>setFacCollege(e.target.value)} className="fi" style={{width:'auto'}}>
+          <option value="All">All Colleges</option>
+          {Object.keys(COLLEGE_MAP).map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+        <span style={{color:'#9ca3af',fontSize:12}}>{faculty.length} faculty</span>
+        <button className="btn btn-g btn-sm" onClick={()=>{setShowAddRow(true);setEditingId(null);setAddForm({is_gfr_eligible:false});}}>+ Add Faculty</button>
+        {faculty.length===0&&<button className="btn btn-p btn-sm" onClick={()=>seedTable('faculty')}>⬆ Load Faculty Data</button>}
+      </div>
+      <div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',overflow:'hidden'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead><tr style={{background:'#f8f7f4',borderBottom:'1.5px solid #e5e7eb'}}>
+            {['Name','Department','College','Title','GFR Eligible',''].map(h=><th key={h} style={{padding:'9px 14px',textAlign:'left',fontWeight:600,fontSize:12}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {showAddRow&&section==='faculty'&&<tr style={{borderBottom:'1px solid #e5e7eb',background:'#f0fdf4'}}>
+              <td style={{padding:'8px 14px'}}><input className="fi" value={addForm.name||''} onChange={e=>af('name')(e.target.value)} placeholder="Faculty name"/></td>
+              <td style={{padding:'8px 14px'}}><input className="fi" value={addForm.department||''} onChange={e=>af('department')(e.target.value)} placeholder="Department"/></td>
+              <td style={{padding:'8px 14px'}}><select className="fi" value={addForm.college_code||''} onChange={e=>af('college_code')(e.target.value)}><option value="">—</option>{Object.keys(COLLEGE_MAP).map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+              <td style={{padding:'8px 14px'}}><input className="fi" value={addForm.title||''} onChange={e=>af('title')(e.target.value)} placeholder="Title"/></td>
+              <td style={{padding:'8px 14px'}}><label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={!!addForm.is_gfr_eligible} onChange={e=>af('is_gfr_eligible')(e.target.checked)}/><span style={{fontSize:12}}>Yes</span></label></td>
+              <td style={{padding:'8px 14px'}}><div style={{display:'flex',gap:6}}>
+                <button className="btn btn-g btn-sm" onClick={async()=>{if(!addForm.name){notify('Name required','error');return;}await addFaculty(addForm);setShowAddRow(false);}}>Save</button>
+                <button className="btn btn-o btn-sm" onClick={()=>setShowAddRow(false)}>Cancel</button>
+              </div></td>
+            </tr>}
+            {faculty.filter(fac=>{
+              if(facCollege!=='All'&&fac.college_code!==facCollege)return false;
+              if(facSearch){const q=facSearch.toLowerCase();return(fac.name||'').toLowerCase().includes(q)||(fac.department||'').toLowerCase().includes(q)||(fac.college_code||'').toLowerCase().includes(q);}
+              return true;
+            }).map(fac=>(
+              <tr key={fac.id} style={{borderBottom:'1px solid #f3f4f6'}}>
+                {editingId===fac.id?(<>
+                  <td style={{padding:'8px 14px'}}><input className="fi" value={editForm.name||''} onChange={e=>ef('name')(e.target.value)}/></td>
+                  <td style={{padding:'8px 14px'}}><input className="fi" value={editForm.department||''} onChange={e=>ef('department')(e.target.value)}/></td>
+                  <td style={{padding:'8px 14px'}}><select className="fi" value={editForm.college_code||''} onChange={e=>ef('college_code')(e.target.value)}><option value="">—</option>{Object.keys(COLLEGE_MAP).map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                  <td style={{padding:'8px 14px'}}><input className="fi" value={editForm.title||''} onChange={e=>ef('title')(e.target.value)}/></td>
+                  <td style={{padding:'8px 14px'}}><label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={!!editForm.is_gfr_eligible} onChange={e=>ef('is_gfr_eligible')(e.target.checked)}/><span style={{fontSize:12}}>Yes</span></label></td>
+                  <td style={{padding:'8px 14px'}}><div style={{display:'flex',gap:6}}>
+                    <button className="btn btn-g btn-sm" onClick={async()=>{await updateFaculty(fac.id,editForm);setEditingId(null);}}>Save</button>
+                    <button className="btn btn-o btn-sm" onClick={cancelEdit}>Cancel</button>
+                  </div></td>
+                </>):(<>
+                  <td style={{padding:'9px 14px',fontWeight:500}}>{fac.name}</td>
+                  <td style={{padding:'9px 14px',color:'#6b7280',fontSize:12}}>{fac.department||'—'}</td>
+                  <td style={{padding:'9px 14px'}}>{fac.college_code?<span style={{background:'#e5e7eb',borderRadius:4,padding:'2px 7px',fontSize:11,fontFamily:"'DM Mono',monospace"}}>{fac.college_code}</span>:'—'}</td>
+                  <td style={{padding:'9px 14px',color:'#9ca3af',fontSize:12}}>{fac.title||'—'}</td>
+                  <td style={{padding:'9px 14px'}}>{fac.is_gfr_eligible?<span className="badge" style={{background:'#d1fae5',color:'#065f46'}}>✓ GFR</span>:<span style={{color:'#d1d5db'}}>—</span>}</td>
+                  <td style={{padding:'9px 14px'}}><div style={{display:'flex',gap:4}}>
+                    <button className="btn btn-o btn-sm" onClick={()=>startEdit(fac)}>✏️</button>
+                    <button className="btn btn-r btn-sm" onClick={()=>deleteFaculty(fac.id,fac.name)}>🗑</button>
+                  </div></td>
+                </>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {faculty.length===0&&<div style={{textAlign:'center',padding:40,color:'#9ca3af'}}>No faculty loaded yet. Click "Load Faculty Data" above.</div>}
+      </div>
+    </div>}
+  </div>);
+}
+
+// ── Trash / Deletion Log ──────────────────────────────────────────────────────
+function TrashView({deletionLog,restoreEntry,notify}){
+  const [search,setSearch]=useState('');
+  const [fType,setFType]=useState('all');
+  const [showRestored,setShowRestored]=useState(false);
+
+  const filtered=useMemo(()=>deletionLog.filter(l=>{
+    if(!showRestored&&l.restored_at)return false;
+    if(fType!=='all'&&l.entity_type!==fType)return false;
+    if(search){const q=search.toLowerCase();return(l.entity_name||'').toLowerCase().includes(q)||(l.notes||'').toLowerCase().includes(q)||(l.entity_type||'').toLowerCase().includes(q);}
+    return true;
+  }),[deletionLog,search,fType,showRestored]);
+
+  return(<div>
+    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search deleted items…" className="fi" style={{flex:1,minWidth:200}}/>
+      <select value={fType} onChange={e=>setFType(e.target.value)} className="fi" style={{width:'auto'}}>
+        <option value="all">All Types</option>
+        <option value="student">Students</option>
+        <option value="gfr">GFR Faculty</option>
+        <option value="faculty">Faculty</option>
+      </select>
+      <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#6b7280',cursor:'pointer'}}>
+        <input type="checkbox" checked={showRestored} onChange={e=>setShowRestored(e.target.checked)}/>
+        Show restored
+      </label>
+      <span style={{color:'#9ca3af',fontSize:12}}>{filtered.length} entries</span>
+    </div>
+
+    {filtered.length===0&&<div style={{background:'#fff',borderRadius:12,border:'1px solid #e5e7eb',padding:40,textAlign:'center',color:'#9ca3af'}}><div style={{fontSize:28,marginBottom:8}}>🗑</div>No deleted items found</div>}
+
+    {filtered.map((l,i)=>{
+      const isRestored=!!l.restored_at;
+      const typeColors={student:{bg:'#dbeafe',color:'#1e3a8a'},gfr:{bg:'#fef3c7',color:'#92400e'},faculty:{bg:'#f3e8ff',color:'#6b21a8'}};
+      const tc=typeColors[l.entity_type]||{bg:'#f3f4f6',color:'#374151'};
+      return(
+        <div key={l.id||i} style={{background:'#fff',borderRadius:10,border:'1px solid '+(isRestored?'#d1fae5':'#e5e7eb'),padding:'14px 18px',marginBottom:8,opacity:isRestored?0.6:1}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div>
+              <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4}}>
+                <span className="badge" style={{background:tc.bg,color:tc.color}}>{l.entity_type}</span>
+                <span style={{fontWeight:600,fontSize:14}}>{l.entity_name}</span>
+                {isRestored&&<span className="badge" style={{background:'#d1fae5',color:'#065f46'}}>✓ Restored</span>}
+              </div>
+              {l.notes&&<div style={{fontSize:12,color:'#6b7280',marginBottom:4}}>Notes: {l.notes}</div>}
+              <div style={{fontSize:11,color:'#9ca3af'}}>Deleted: {l.deleted_at?new Date(l.deleted_at).toLocaleString():'—'}{l.restored_at?' · Restored: '+new Date(l.restored_at).toLocaleString():''}</div>
+            </div>
+            {!isRestored&&<button className="btn btn-g btn-sm" onClick={()=>restoreEntry(l)}>↩ Restore</button>}
+          </div>
+          {l.entity_data&&Object.keys(l.entity_data).length>0&&(
+            <details style={{marginTop:8}}>
+              <summary style={{fontSize:11,color:'#9ca3af',cursor:'pointer'}}>View saved data</summary>
+              <pre style={{fontSize:10,color:'#374151',background:'#f8f7f4',borderRadius:6,padding:8,marginTop:4,maxHeight:120,overflow:'auto',whiteSpace:'pre-wrap',fontFamily:"'DM Mono',monospace"}}>{JSON.stringify(l.entity_data,null,2)}</pre>
+            </details>
+          )}
+        </div>
+      );
+    })}
   </div>);
 }
 
